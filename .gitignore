@@ -1,0 +1,42 @@
+# =============================================================
+# HookReel .gitignore
+# =============================================================
+
+# CRITICAL: Never commit credentials
+config/.env
+config/.env.bak
+
+# Backup files
+*.bak
+
+# Internal development files
+dev_log.md
+
+# Stray duplicate files
+webui.py
+
+# Python bytecode
+*.pyc
+*.pyo
+__pycache__/
+*.egg-info/
+dist/
+build/
+
+# Runtime data -- never commit these
+logs/
+data/
+quarantine/
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Docker
+*.log

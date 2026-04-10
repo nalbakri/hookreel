@@ -1,0 +1,62 @@
+# =============================================================
+# HookReel — Docker Compose (standalone stack)
+# DO NOT mix with the arr stack compose file.
+# =============================================================
+services:
+  clamav:
+    image: clamav/clamav:latest
+    container_name: hookreel-clamav
+    restart: unless-stopped
+    networks:
+      - hookreel_net
+    volumes:
+      - clamav_data:/var/lib/clamav
+    environment:
+      - CLAMAV_NO_FRESHCLAM=false
+  hookreel:
+    image: hookreel/hookreel:latest
+    # build: .   # uncomment to build locally instead of pulling from Docker Hub
+    container_name: hookreel
+    restart: unless-stopped
+    depends_on:
+      - clamav
+    env_file:
+      - config/.env
+    environment:
+      - PUID=1000
+      - PGID=100
+      - TZ=Asia/Kuala_Lumpur
+    ports:
+      - "8765:8765"
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - /srv/dev-disk-by-uuid-0df0a1ad-6207-47fc-9cd5-69155d6a184b/appdata/hookreel/config:/config:rw
+      - /srv/dev-disk-by-uuid-0df0a1ad-6207-47fc-9cd5-69155d6a184b/appdata/hookreel/logs:/logs
+      - /srv/dev-disk-by-uuid-0df0a1ad-6207-47fc-9cd5-69155d6a184b/appdata/hookreel/data:/db
+      - /srv/dev-disk-by-uuid-0df0a1ad-6207-47fc-9cd5-69155d6a184b/appdata/hookreel/quarantine:/quarantine
+      - /srv/mergerfs/pool/Torrents/Movies:/data/Movies
+      - /srv/mergerfs/pool/Torrents/TV:/data/TV
+      - /srv/mergerfs/pool/Torrents/Downloads:/data/Downloads
+    #security_opt:
+    #  - no-new-privileges:true
+    networks:
+      - hookreel_net
+      - vpn_net
+# =============================================================
+# Networks
+# =============================================================
+networks:
+  hookreel_net:
+    driver: bridge
+  vpn_net:
+    name: qbittorentvpnsuite_vpn_net
+    external: true
+# =============================================================
+# Volumes
+# =============================================================
+volumes:
+  clamav_data:

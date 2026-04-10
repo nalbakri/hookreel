@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="HookReel">
+  <meta name="theme-color" content="#1a1a2e">
+  <link rel="manifest" href="/static/manifest.json">
+  <link rel="stylesheet" href="/static/style.css">
+  <title>Chat — HookReel</title>
+</head>
+<body>
+
+<!-- Chat uses its own full-height layout, not the standard page layout -->
+<div class="chat-page">
+
+  <!-- Header with nav link -->
+  <div class="chat-header">
+    <span>⚓ Hook<span style="color:var(--text-primary)">Reel</span> — Chat</span>
+    <div style="margin-left:auto;display:flex;gap:12px;align-items:center;">
+      <a href="/dashboard" style="color:var(--text-secondary);font-size:0.85rem;">Dashboard</a>
+      <a href="/library"   style="color:var(--text-secondary);font-size:0.85rem;">Library</a>
+      <a href="/logout"    style="color:var(--text-muted);font-size:0.85rem;">Logout</a>
+    </div>
+  </div>
+
+  <!-- Messages area -->
+  <div class="chat-messages" id="chat-messages">
+    <!-- Welcome bubble -->
+    <div class="chat-bubble agent">
+      <div class="bubble-label">⚓ HookReel</div>
+      Ahoy! Tell me what ye want to watch and I'll hunt it down. Try: <em>Find me Interstellar</em>
+    </div>
+  </div>
+
+  <!-- Input area -->
+  <div class="chat-input-area">
+    <textarea
+      class="chat-input"
+      id="chat-input"
+      placeholder="Ask HookReel anything..."
+      rows="1"
+      autocomplete="off"
+      autocorrect="off"
+      spellcheck="false"
+    ></textarea>
+    <button class="btn btn-primary chat-send-btn" id="send-btn" title="Send">➤</button>
+  </div>
+
+</div>
+
+<script>
+  var messagesEl = document.getElementById('chat-messages');
+  var inputEl    = document.getElementById('chat-input');
+  var sendBtn    = document.getElementById('send-btn');
+  var isWaiting  = false;
+
+  function scrollToBottom() {
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+  }
+
+  function appendBubble(text, role) {
+    var bubble = document.createElement('div');
+    bubble.className = 'chat-bubble ' + role;
+    if (role === 'agent') {
+      var label = document.createElement('div');
+      label.className = 'bubble-label';
+      label.textContent = '⚓ HookReel';
+      bubble.appendChild(label);
+    }
+    var content = document.createElement('span');
+    // Preserve newlines
+    content.style.whiteSpace = 'pre-wrap';
+    content.textContent = text;
+    bubble.appendChild(content);
+    messagesEl.appendChild(bubble);
+    scrollToBottom();
+    return bubble;
+  }
+
+  function showTyping() {
+    var indicator = document.createElement('div');
+    indicator.className = 'typing-indicator';
+    indicator.id = 'typing-indicator';
+    indicator.innerHTML = '<div class="typing-dot"></div><div class="typing-dot"></div><div class="typing-dot"></div>';
+    messagesEl.appendChild(indicator);
+    scrollToBottom();
+  }
+
+  function removeTyping() {
+    var indicator = document.getElementById('typing-indicator');
+    if (indicator) indicator.remove();
+  }
+
+  function sendMessage() {
+    if (isWaiting) return;
+    var text = inputEl.value.trim();
+    if (!text) return;
+
+    appendBubble(text, 'user');
+    inputEl.value = '';
+    inputEl.style.height = 'auto';
+    isWaiting = true;
+    sendBtn.disabled = true;
+    showTyping();
+
+    fetch('/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: text })
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      removeTyping();
+      appendBubble(data.response || '(no response)', 'agent');
+    })
+    .catch(function(err) {
+      removeTyping();
+      appendBubble('Something went wrong in the engine room. Please try again.', 'agent');
+    })
+    .finally(function() {
+      isWaiting = false;
+      sendBtn.disabled = false;
+      inputEl.focus();
+    });
+  }
+
+  // Send on button click
+  sendBtn.addEventListener('click', sendMessage);
+
+  // Send on Enter (Shift+Enter for newline)
+  inputEl.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      sendMessage();
+    }
+  });
+
+  // Auto-resize textarea as user types
+  inputEl.addEventListener('input', function() {
+    this.style.height = 'auto';
+    this.style.height = Math.min(this.scrollHeight, 120) + 'px';
+  });
+
+  // Focus input on load
+  inputEl.focus();
+  scrollToBottom();
+</script>
+
+</body>
+</html>

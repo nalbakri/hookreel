@@ -1,0 +1,405 @@
+{% extends "base.html" %}
+{% block title %}Downloader — HookReel{% endblock %}
+
+{% block content %}
+<div class="page">
+  <div class="page-header">
+    <h1 class="page-title">Downloader</h1>
+    <p class="page-subtitle">Manage qBittorrent downloads and settings</p>
+  </div>
+
+  <!-- Live status bar -->
+  <div class="status-bar" id="status-bar">
+    <div class="status-item">
+      <span class="status-item-label">Download</span>
+      <span class="status-item-value" id="dl-speed">—</span>
+    </div>
+    <div class="status-item">
+      <span class="status-item-label">Upload</span>
+      <span class="status-item-value" id="ul-speed">—</span>
+    </div>
+    <div class="status-item">
+      <span class="status-item-label">DHT Nodes</span>
+      <span class="status-item-value" id="dht-nodes">—</span>
+    </div>
+    <div class="status-item">
+      <span class="status-item-label">Free Space</span>
+      <span class="status-item-value" id="free-space">—</span>
+    </div>
+    <div class="status-item">
+      <span class="status-item-label">Active</span>
+      <span class="status-item-value" id="active-count">—</span>
+    </div>
+  </div>
+
+  <!-- Speed limits -->
+  <div class="card mb-16">
+    <div class="card-header">
+      <span class="card-title">Speed Limits</span>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;" class="mb-12">
+      <div class="form-group mb-0">
+        <label>Download Limit (KB/s, 0=unlimited)</label>
+        <input type="number" id="dl-limit" placeholder="0">
+      </div>
+      <div class="form-group mb-0">
+        <label>Upload Limit (KB/s, 0=unlimited)</label>
+        <input type="number" id="ul-limit" placeholder="0">
+      </div>
+    </div>
+    <button class="btn btn-primary btn-sm" onclick="applySpeedLimits()">Apply Limits</button>
+    <span class="save-confirm" id="confirm-speed">✓ Applied</span>
+  </div>
+
+  <!-- Active torrents -->
+  <div class="section-title">Torrents</div>
+
+  <div class="filter-tabs">
+    <button class="filter-tab active" onclick="filterTorrents('all', this)">All</button>
+    <button class="filter-tab" onclick="filterTorrents('downloading', this)">Downloading</button>
+    <button class="filter-tab" onclick="filterTorrents('seeding', this)">Seeding</button>
+    <button class="filter-tab" onclick="filterTorrents('paused', this)">Paused</button>
+  </div>
+
+  <div class="flex-gap mb-12" style="flex-wrap:wrap;">
+    <button class="btn btn-secondary btn-sm" onclick="bulkAction('pause')">Pause All</button>
+    <button class="btn btn-secondary btn-sm" onclick="bulkAction('resume')">Resume All</button>
+    <button class="btn btn-secondary btn-sm" onclick="loadTorrents()">↻ Refresh</button>
+  </div>
+
+  <div id="torrent-list">
+    <div class="card"><p class="text-muted">Loading torrents...</p></div>
+  </div>
+
+  <!-- Categories -->
+  <div class="section-title mt-16">Categories</div>
+  <div id="categories-list">
+    <div class="card"><p class="text-muted">Loading categories...</p></div>
+  </div>
+  <div class="flex-gap mt-12 mb-16">
+    <input type="text" id="new-cat-name" placeholder="Category name" style="max-width:180px;">
+    <input type="text" id="new-cat-path" placeholder="Save path">
+    <button class="btn btn-secondary btn-sm" onclick="addCategory()">Add Category</button>
+  </div>
+
+  <!-- Connection settings -->
+  <div class="card mb-16">
+    <div class="card-header">
+      <span class="card-title">Connection Settings</span>
+    </div>
+    <div class="alert alert-warning mb-12">
+      Do not change the Web UI settings — this could lock HookReel out of qBittorrent entirely.
+    </div>
+    <div id="conn-settings-form">
+      <p class="text-muted">Loading...</p>
+    </div>
+  </div>
+
+  <!-- Seeding settings -->
+  <div class="card mb-16">
+    <div class="card-header">
+      <span class="card-title">Seeding Limits</span>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;" class="mb-12">
+      <div class="form-group mb-0">
+        <label>Ratio Limit (-1=unlimited)</label>
+        <input type="number" id="seed-ratio" step="0.1" placeholder="-1">
+      </div>
+      <div class="form-group mb-0">
+        <label>Time Limit in minutes (-1=unlimited)</label>
+        <input type="number" id="seed-time" placeholder="-1">
+      </div>
+    </div>
+    <button class="btn btn-primary btn-sm" onclick="saveSeedingSettings()">Save</button>
+    <span class="save-confirm" id="confirm-seeding">✓ Saved</span>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  var currentFilter = 'all';
+  var currentHashes = [];
+
+  function formatBytes(bytes) {
+    if (!bytes || bytes === 0) return '0 B';
+    var k = 1024;
+    var sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+    var i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+  }
+
+  function formatEta(seconds) {
+    if (!seconds || seconds >= 8640000) return '∞';
+    if (seconds < 60) return seconds + 's';
+    if (seconds < 3600) return Math.floor(seconds / 60) + 'm';
+    return Math.floor(seconds / 3600) + 'h ' + Math.floor((seconds % 3600) / 60) + 'm';
+  }
+
+  function escHtml(str) {
+    var d = document.createElement('div');
+    d.textContent = String(str);
+    return d.innerHTML;
+  }
+
+  function refreshStatus() {
+    fetch('/api/downloader/transfer')
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        document.getElementById('dl-speed').textContent  = formatBytes(data.dl_info_speed || 0) + '/s';
+        document.getElementById('ul-speed').textContent  = formatBytes(data.up_info_speed || 0) + '/s';
+        document.getElementById('dht-nodes').textContent = data.dht_nodes || 0;
+        document.getElementById('free-space').textContent = formatBytes(data.free_space_on_disk || 0);
+        document.getElementById('active-count').textContent = (data.downloading_torrents || 0) + ' / ' + (data.total_torrents || 0);
+      })
+      .catch(function() {});
+  }
+
+  function loadTorrents() {
+    var listEl = document.getElementById('torrent-list');
+    fetch('/api/downloader/torrents?filter=' + currentFilter)
+      .then(function(r) { return r.json(); })
+      .then(function(torrents) {
+        currentHashes = torrents.map(function(t) { return t.hash; });
+        if (!torrents.length) {
+          listEl.innerHTML = '<div class="card"><p class="text-muted">No torrents found.</p></div>';
+          return;
+        }
+        listEl.innerHTML = '';
+        torrents.forEach(function(t) {
+          var pct = (t.progress * 100).toFixed(1);
+          var card = document.createElement('div');
+          card.className = 'torrent-card';
+          card.innerHTML =
+            '<div class="torrent-name">' + escHtml(t.name) + '</div>' +
+            '<div class="progress-wrap"><div class="progress-bar' +
+              (t.progress >= 1 ? ' complete' : '') +
+              '" style="width:' + pct + '%"></div></div>' +
+            '<div class="torrent-meta">' +
+              '<span>' + pct + '%</span>' +
+              '<span>↓ ' + formatBytes(t.dlspeed) + '/s</span>' +
+              '<span>↑ ' + formatBytes(t.upspeed) + '/s</span>' +
+              '<span>ETA: ' + formatEta(t.eta) + '</span>' +
+              '<span>' + escHtml(t.state) + '</span>' +
+              '<span>' + formatBytes(t.size) + '</span>' +
+            '</div>' +
+            '<div class="torrent-actions">' +
+              '<button class="btn btn-secondary btn-sm" onclick="torrentAction(\'' + t.hash + '\', \'pause\')">Pause</button>' +
+              '<button class="btn btn-secondary btn-sm" onclick="torrentAction(\'' + t.hash + '\', \'resume\')">Resume</button>' +
+              '<button class="btn btn-danger btn-sm" onclick="deleteTorrent(\'' + t.hash + '\', \'' + escHtml(t.name) + '\')">Delete</button>' +
+            '</div>';
+          listEl.appendChild(card);
+        });
+      })
+      .catch(function() {
+        listEl.innerHTML = '<div class="card"><p class="text-danger">Failed to load torrents. Is qBittorrent running?</p></div>';
+      });
+  }
+
+  function filterTorrents(filter, btn) {
+    currentFilter = filter;
+    document.querySelectorAll('.filter-tab').forEach(function(t) { t.classList.remove('active'); });
+    btn.classList.add('active');
+    loadTorrents();
+  }
+
+  function torrentAction(hash, action) {
+    fetch('/api/downloader/torrents/' + hash + '/' + action, { method: 'POST' })
+      .then(function() { setTimeout(loadTorrents, 500); })
+      .catch(function() { alert(action + ' failed'); });
+  }
+
+  function deleteTorrent(hash, name) {
+    var withFiles = confirm('Delete "' + name + '"?\n\nOK = delete torrent + files\nCancel = keep files');
+    fetch('/api/downloader/torrents/' + hash + '/delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ delete_files: withFiles })
+    })
+    .then(function() { setTimeout(loadTorrents, 500); })
+    .catch(function() { alert('Delete failed'); });
+  }
+
+  function bulkAction(action) {
+    fetch('/api/downloader/torrents/bulk/' + action, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filter: currentFilter })
+    })
+    .then(function() { setTimeout(loadTorrents, 800); })
+    .catch(function() { alert(action + ' all failed'); });
+  }
+
+  function loadCategories() {
+    fetch('/api/downloader/categories')
+      .then(function(r) { return r.json(); })
+      .then(function(cats) {
+        var el = document.getElementById('categories-list');
+        var keys = Object.keys(cats);
+        if (!keys.length) {
+          el.innerHTML = '<div class="card"><p class="text-muted">No categories defined.</p></div>';
+          return;
+        }
+        var html = '<div class="card"><table style="width:100%;border-collapse:collapse;font-size:0.85rem;">' +
+          '<tr style="color:var(--text-muted);"><th style="padding:6px 8px;text-align:left;">Name</th>' +
+          '<th style="padding:6px 8px;text-align:left;">Save Path</th>' +
+          '<th style="padding:6px 8px;"></th></tr>';
+        keys.forEach(function(name) {
+          html += '<tr style="border-top:1px solid var(--border);">' +
+            '<td style="padding:6px 8px;">' + escHtml(name) + '</td>' +
+            '<td style="padding:6px 8px;">' + escHtml(cats[name].savePath || '—') + '</td>' +
+            '<td style="padding:6px 8px;">' +
+            '<button class="btn btn-danger btn-sm" onclick="removeCategory(\'' + escHtml(name) + '\')">Remove</button>' +
+            '</td></tr>';
+        });
+        html += '</table></div>';
+        el.innerHTML = html;
+      })
+      .catch(function() {});
+  }
+
+  function addCategory() {
+    var name = document.getElementById('new-cat-name').value.trim();
+    var path = document.getElementById('new-cat-path').value.trim();
+    if (!name) { alert('Category name is required'); return; }
+    fetch('/api/downloader/categories', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: name, save_path: path })
+    })
+    .then(function() {
+      document.getElementById('new-cat-name').value = '';
+      document.getElementById('new-cat-path').value = '';
+      loadCategories();
+    })
+    .catch(function() { alert('Add category failed'); });
+  }
+
+  function removeCategory(name) {
+    if (!confirm('Remove category "' + name + '"?')) return;
+    fetch('/api/downloader/categories/' + encodeURIComponent(name), { method: 'DELETE' })
+      .then(function() { loadCategories(); })
+      .catch(function() { alert('Remove failed'); });
+  }
+
+  function applySpeedLimits() {
+    var dl = parseInt(document.getElementById('dl-limit').value || '0') * 1024;
+    var ul = parseInt(document.getElementById('ul-limit').value || '0') * 1024;
+    fetch('/api/downloader/speed', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ dl_limit: dl, ul_limit: ul })
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.success) {
+        var c = document.getElementById('confirm-speed');
+        c.classList.add('show');
+        setTimeout(function() { c.classList.remove('show'); }, 3000);
+      }
+    })
+    .catch(function() { alert('Apply limits failed'); });
+  }
+
+  function saveSeedingSettings() {
+    var ratio = parseFloat(document.getElementById('seed-ratio').value || '-1');
+    var time  = parseInt(document.getElementById('seed-time').value || '-1');
+    fetch('/api/downloader/preferences', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        max_ratio: ratio,
+        max_seeding_time: time,
+        max_ratio_enabled: ratio !== -1,
+        max_seeding_time_enabled: time !== -1
+      })
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.success) {
+        var c = document.getElementById('confirm-seeding');
+        c.classList.add('show');
+        setTimeout(function() { c.classList.remove('show'); }, 3000);
+      }
+    })
+    .catch(function() { alert('Save failed'); });
+  }
+
+  // Load preferences into connection settings form
+  function loadPreferences() {
+    fetch('/api/downloader/preferences')
+      .then(function(r) { return r.json(); })
+      .then(function(prefs) {
+        document.getElementById('conn-settings-form').innerHTML =
+          '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;" class="mb-12">' +
+          '<div class="form-group mb-0"><label>Listening Port</label>' +
+          '<input type="number" id="pref-port" value="' + (prefs.listen_port || '') + '"></div>' +
+          '<div class="form-group mb-0"><label>Max Connections</label>' +
+          '<input type="number" id="pref-max-conn" value="' + (prefs.max_connec || '') + '"></div>' +
+          '</div>' +
+          '<div class="flex-gap">' +
+          '<label class="toggle-wrap"><label class="toggle">' +
+          '<input type="checkbox" id="pref-dht" ' + (prefs.dht ? 'checked' : '') + '>' +
+          '<span class="toggle-slider"></span></label> DHT</label>' +
+          '<label class="toggle-wrap"><label class="toggle">' +
+          '<input type="checkbox" id="pref-pex" ' + (prefs.pex ? 'checked' : '') + '>' +
+          '<span class="toggle-slider"></span></label> PeX</label>' +
+          '<label class="toggle-wrap"><label class="toggle">' +
+          '<input type="checkbox" id="pref-lsd" ' + (prefs.lsd ? 'checked' : '') + '>' +
+          '<span class="toggle-slider"></span></label> LSD</label>' +
+          '</div>' +
+          '<div class="flex-gap mt-12">' +
+          '<button class="btn btn-primary btn-sm" onclick="saveConnSettings()">Save</button>' +
+          '<span class="save-confirm" id="confirm-conn">✓ Saved</span>' +
+          '</div>';
+
+        // Load seeding limits too
+        document.getElementById('seed-ratio').value = prefs.max_ratio !== undefined ? prefs.max_ratio : -1;
+        document.getElementById('seed-time').value  = prefs.max_seeding_time !== undefined ? prefs.max_seeding_time : -1;
+      })
+      .catch(function() {
+        document.getElementById('conn-settings-form').innerHTML =
+          '<p class="text-muted">Could not load preferences.</p>';
+      });
+  }
+
+  function saveConnSettings() {
+    var port    = document.getElementById('pref-port');
+    var maxConn = document.getElementById('pref-max-conn');
+    var dht     = document.getElementById('pref-dht');
+    var pex     = document.getElementById('pref-pex');
+    var lsd     = document.getElementById('pref-lsd');
+    if (!port) return;
+
+    fetch('/api/downloader/preferences', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        listen_port: parseInt(port.value),
+        max_connec:  parseInt(maxConn.value),
+        dht: dht.checked,
+        pex: pex.checked,
+        lsd: lsd.checked
+      })
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.success) {
+        var c = document.getElementById('confirm-conn');
+        if (c) { c.classList.add('show'); setTimeout(function() { c.classList.remove('show'); }, 3000); }
+      }
+    })
+    .catch(function() { alert('Save failed'); });
+  }
+
+  // Initialise page
+  refreshStatus();
+  loadTorrents();
+  loadCategories();
+  loadPreferences();
+
+  // Auto-refresh status bar every 5 seconds
+  setInterval(refreshStatus, 5000);
+</script>
+{% endblock %}

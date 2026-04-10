@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — HookReel{% endblock %}
+
+{% block content %}
+<div class="page">
+  <div class="page-header">
+    <h1 class="page-title">Dashboard</h1>
+    <p class="page-subtitle">Live status and recent activity</p>
+  </div>
+
+  <!-- Stats row -->
+  <div class="stats-grid" id="stats-grid">
+    <div class="stat-card">
+      <div class="stat-value" id="stat-library">{{ library_count }}</div>
+      <div class="stat-label">In Library</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value" id="stat-downloading">{{ downloading_count }}</div>
+      <div class="stat-label">Downloading</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value" id="stat-speed">—</div>
+      <div class="stat-label">DL Speed</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value" id="stat-active">—</div>
+      <div class="stat-label">Active Torrents</div>
+    </div>
+  </div>
+
+  <!-- Active downloads -->
+  <div class="section-title">Active Downloads</div>
+  <div id="active-downloads">
+    {% if active_downloads %}
+      {% for torrent in active_downloads %}
+      <div class="download-card">
+        <div class="download-title">{{ torrent.name }}</div>
+        <div class="progress-wrap">
+          <div class="progress-bar" style="width: {{ (torrent.progress * 100) | round(1) }}%"></div>
+        </div>
+        <div class="download-meta">
+          <span>{{ (torrent.progress * 100) | round(1) }}%</span>
+          <span>{{ torrent.dlspeed | filesizeformat }}/s</span>
+          <span>ETA: {% if torrent.eta and torrent.eta < 8640000 %}{{ torrent.eta | int }}s{% else %}—{% endif %}</span>
+        </div>
+      </div>
+      {% endfor %}
+    {% else %}
+      <div class="card">
+        <p class="text-muted">No active downloads right now.</p>
+      </div>
+    {% endif %}
+  </div>
+
+  <!-- Recent completions -->
+  <div class="section-title mt-16">Recently Completed</div>
+  {% if recent_complete %}
+    <div class="movie-grid">
+      {% for movie in recent_complete %}
+      <div class="movie-card">
+        <div class="movie-card-body">
+          <div class="movie-title">{{ movie.title }}</div>
+          <div class="movie-year">{{ movie.year or '—' }}</div>
+          <span class="badge badge-complete">Complete</span>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  {% else %}
+    <div class="card">
+      <p class="text-muted">No completed movies yet.</p>
+    </div>
+  {% endif %}
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // Auto-refresh stats and active downloads every 10 seconds
+  // Uses fetch() to update DOM in place — no scroll jump or flicker
+
+  function formatBytes(bytes) {
+    if (bytes === 0) return '0 B';
+    var k = 1024;
+    var sizes = ['B', 'KB', 'MB', 'GB'];
+    var i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+  }
+
+  function refreshStatus() {
+    fetch('/api/status')
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        document.getElementById('stat-library').textContent = data.library_count;
+        document.getElementById('stat-downloading').textContent = data.active_downloads;
+        document.getElementById('stat-speed').textContent = formatBytes(data.dl_speed || 0) + '/s';
+        document.getElementById('stat-active').textContent = data.active_torrents || 0;
+      })
+      .catch(function() {});
+  }
+
+  // Start auto-refresh
+  setInterval(refreshStatus, 10000);
+</script>
+{% endblock %}

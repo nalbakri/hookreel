@@ -1,0 +1,1109 @@
+{% extends "base.html" %}
+{% block title %}Settings — HookReel{% endblock %}
+
+{% block content %}
+<div class="page">
+  <div class="page-header">
+    <h1 class="page-title">Settings</h1>
+    <p class="page-subtitle">Configure HookReel — changes are written to config/.env</p>
+  </div>
+
+  <div id="restart-banner" class="alert alert-warning hidden">
+    Some changes require an agent restart to take effect.
+    <button id="restart-now-btn" class="btn btn-sm btn-warning" style="margin-left:12px;" onclick="restartAgentNow()">Restart Now</button>
+    <span id="restart-now-status" style="margin-left:8px;"></span>
+  </div>
+
+  {% if delete_enabled %}
+  <div class="alert alert-danger mb-4">
+    ⚠️ <strong>File deletion is enabled</strong> — the agent can permanently delete media files.
+  </div>
+  {% endif %}
+
+  <!-- Section 1: Download client -->
+  <div class="settings-section open">
+    <div class="settings-section-header" onclick="toggleSection(this)">
+      <span class="settings-section-title">⬇️ Download Client (qBittorrent)</span>
+      <span class="settings-section-arrow">▼</span>
+    </div>
+    <div class="settings-section-body">
+      <div class="form-group">
+        <label>Host</label>
+        <input type="text" id="QBITTORRENT_HOST" value="{{ settings.QBITTORRENT_HOST }}">
+      </div>
+      <div class="form-group">
+        <label>Port</label>
+        <input type="number" id="QBITTORRENT_PORT" value="{{ settings.QBITTORRENT_PORT }}">
+      </div>
+      <div class="form-group">
+        <label>Username</label>
+        <input type="text" id="QBITTORRENT_USER" value="{{ settings.QBITTORRENT_USER }}">
+      </div>
+      <div class="form-group">
+        <label>Password</label>
+        <div class="input-with-reveal">
+          <input type="password" id="QBITTORRENT_PASS" value="{{ settings.QBITTORRENT_PASS }}">
+          <button class="reveal-btn" onclick="toggleReveal('QBITTORRENT_PASS', this)">Show</button>
+        </div>
+      </div>
+      <div class="flex-gap">
+        <button class="btn btn-primary btn-sm" onclick="saveSection(['QBITTORRENT_HOST','QBITTORRENT_PORT','QBITTORRENT_USER','QBITTORRENT_PASS'], this)">Save</button>
+        <button class="btn btn-secondary btn-sm" onclick="testConnection('qbittorrent', this)">Test Connection</button>
+        <span class="save-confirm" id="confirm-qbt">✓ Saved</span>
+      </div>
+      <div id="test-qbittorrent" class="test-result hidden"></div>
+    </div>
+  </div>
+
+  <!-- Section 2: Indexer -->
+  <div class="settings-section">
+    <div class="settings-section-header" onclick="toggleSection(this)">
+      <span class="settings-section-title">🔍 Indexer (Prowlarr)</span>
+      <span class="settings-section-arrow">▼</span>
+    </div>
+    <div class="settings-section-body">
+      <div class="form-group">
+        <label>Host</label>
+        <input type="text" id="PROWLARR_HOST" value="{{ settings.PROWLARR_HOST }}">
+      </div>
+      <div class="form-group">
+        <label>Port</label>
+        <input type="number" id="PROWLARR_PORT" value="{{ settings.PROWLARR_PORT }}">
+      </div>
+      <div class="form-group">
+        <label>API Key</label>
+        <div class="input-with-reveal">
+          <input type="password" id="PROWLARR_API_KEY" value="{{ settings.PROWLARR_API_KEY }}">
+          <button class="reveal-btn" onclick="toggleReveal('PROWLARR_API_KEY', this)">Show</button>
+        </div>
+      </div>
+      <div class="flex-gap">
+        <button class="btn btn-primary btn-sm" onclick="saveSection(['PROWLARR_HOST','PROWLARR_PORT','PROWLARR_API_KEY'], this)">Save</button>
+        <button class="btn btn-secondary btn-sm" onclick="testConnection('prowlarr', this)">Test Connection</button>
+        <span class="save-confirm" id="confirm-prowlarr">✓ Saved</span>
+      </div>
+      <div id="test-prowlarr" class="test-result hidden"></div>
+    </div>
+  </div>
+
+  <!-- Section 3: Media library -->
+  <div class="settings-section">
+    <div class="settings-section-header" onclick="toggleSection(this)">
+      <span class="settings-section-title">📺 Media Library (Jellyfin)</span>
+      <span class="settings-section-arrow">▼</span>
+    </div>
+    <div class="settings-section-body">
+      <p class="form-note mb-12">Leave blank if not using Jellyfin.</p>
+      <div class="form-group">
+        <label>Host</label>
+        <input type="text" id="JELLYFIN_HOST" value="{{ settings.JELLYFIN_HOST }}">
+      </div>
+      <div class="form-group">
+        <label>Port</label>
+        <input type="number" id="JELLYFIN_PORT" value="{{ settings.JELLYFIN_PORT }}">
+      </div>
+      <div class="form-group">
+        <label>API Key</label>
+        <div class="input-with-reveal">
+          <input type="password" id="JELLYFIN_API_KEY" value="{{ settings.JELLYFIN_API_KEY }}">
+          <button class="reveal-btn" onclick="toggleReveal('JELLYFIN_API_KEY', this)">Show</button>
+        </div>
+      </div>
+      <div class="flex-gap">
+        <button class="btn btn-primary btn-sm" onclick="saveSection(['JELLYFIN_HOST','JELLYFIN_PORT','JELLYFIN_API_KEY'], this)">Save</button>
+        <button class="btn btn-secondary btn-sm" onclick="testConnection('jellyfin', this)">Test Connection</button>
+        <span class="save-confirm" id="confirm-jellyfin">✓ Saved</span>
+      </div>
+      <div id="test-jellyfin" class="test-result hidden"></div>
+    </div>
+  </div>
+
+  <!-- Section 4: Metadata -->
+  <div class="settings-section">
+    <div class="settings-section-header" onclick="toggleSection(this)">
+      <span class="settings-section-title">🎬 Metadata Provider</span>
+      <span class="settings-section-arrow">▼</span>
+    </div>
+    <div class="settings-section-body">
+      <div class="form-group">
+        <label>Provider</label>
+        <select id="METADATA_PROVIDER">
+          <option value="tmdb"    {% if settings.METADATA_PROVIDER == 'tmdb'    %}selected{% endif %}>TMDB</option>
+          <option value="omdb"    {% if settings.METADATA_PROVIDER == 'omdb'    %}selected{% endif %}>OMDb</option>
+          <option value="tvmaze"  {% if settings.METADATA_PROVIDER == 'tvmaze'  %}selected{% endif %}>TVmaze (no key needed)</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>API Key</label>
+        <div class="input-with-reveal">
+          <input type="password" id="METADATA_API_KEY" value="{{ settings.METADATA_API_KEY }}">
+          <button class="reveal-btn" onclick="toggleReveal('METADATA_API_KEY', this)">Show</button>
+        </div>
+      </div>
+      <div class="flex-gap">
+        <button class="btn btn-primary btn-sm" onclick="saveSection(['METADATA_PROVIDER','METADATA_API_KEY'], this)">Save</button>
+        <button class="btn btn-secondary btn-sm" onclick="testConnection('metadata', this)">Test Connection</button>
+        <span class="save-confirm" id="confirm-metadata">✓ Saved</span>
+      </div>
+      <div id="test-metadata" class="test-result hidden"></div>
+    </div>
+  </div>
+
+  <!-- Section 5: AI model -->
+  <div class="settings-section">
+    <div class="settings-section-header" onclick="toggleSection(this)">
+      <span class="settings-section-title">🤖 AI Model</span>
+      <span class="settings-section-arrow">▼</span>
+    </div>
+    <div class="settings-section-body">
+      <div class="form-group">
+        <label>Endpoint URL</label>
+        <input type="text" id="AI_MODEL_ENDPOINT" value="{{ settings.AI_MODEL_ENDPOINT }}" placeholder="https://api.deepseek.com/v1">
+      </div>
+      <div class="form-group">
+        <label>Model Name</label>
+        <input type="text" id="AI_MODEL_NAME" value="{{ settings.AI_MODEL_NAME }}" placeholder="deepseek-chat">
+      </div>
+      <div class="form-group">
+        <label>API Key</label>
+        <div class="input-with-reveal">
+          <input type="password" id="AI_API_KEY" value="{{ settings.AI_API_KEY }}">
+          <button class="reveal-btn" onclick="toggleReveal('AI_API_KEY', this)">Show</button>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Max Tokens</label>
+        <input type="number" id="AI_MAX_TOKENS" value="{{ settings.AI_MAX_TOKENS }}">
+      </div>
+      <div class="form-group">
+        <label>Temperature: <span id="temp-display">{{ settings.AI_TEMPERATURE }}</span></label>
+        <input type="range" id="AI_TEMPERATURE" min="0" max="1" step="0.05"
+               value="{{ settings.AI_TEMPERATURE }}"
+               oninput="document.getElementById('temp-display').textContent = this.value">
+      </div>
+      <div class="form-group">
+        <label>Max Tool Rounds</label>
+        <input type="number" id="AI_MAX_TOOL_ROUNDS" value="{{ settings.AI_MAX_TOOL_ROUNDS }}">
+      </div>
+      <div class="flex-gap">
+        <button class="btn btn-primary btn-sm" onclick="saveSection(['AI_MODEL_ENDPOINT','AI_MODEL_NAME','AI_API_KEY','AI_MAX_TOKENS','AI_TEMPERATURE','AI_MAX_TOOL_ROUNDS'], this)">Save</button>
+        <button class="btn btn-secondary btn-sm" onclick="testConnection('ai', this)">Test Connection</button>
+        <span class="save-confirm" id="confirm-ai">✓ Saved</span>
+      </div>
+      <div id="test-ai" class="test-result hidden"></div>
+    </div>
+  </div>
+
+  <!-- Section 6: Download preferences -->
+  <div class="settings-section">
+    <div class="settings-section-header" onclick="toggleSection(this)">
+      <span class="settings-section-title">⚙️ Download Preferences</span>
+      <span class="settings-section-arrow">▼</span>
+    </div>
+    <div class="settings-section-body">
+      <div class="form-group">
+        <label>Preferred Resolution</label>
+        <select id="PREFERRED_RESOLUTION">
+          <option value="any"   {% if settings.PREFERRED_RESOLUTION == 'any'   %}selected{% endif %}>Any</option>
+          <option value="2160p" {% if settings.PREFERRED_RESOLUTION == '2160p' %}selected{% endif %}>2160p (4K)</option>
+          <option value="1080p" {% if settings.PREFERRED_RESOLUTION == '1080p' %}selected{% endif %}>1080p</option>
+          <option value="720p"  {% if settings.PREFERRED_RESOLUTION == '720p'  %}selected{% endif %}>720p</option>
+          <option value="480p"  {% if settings.PREFERRED_RESOLUTION == '480p'  %}selected{% endif %}>480p</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Maximum File Size (GB)</label>
+        <input type="number" id="MAX_FILE_SIZE_GB" value="{{ settings.MAX_FILE_SIZE_GB }}" placeholder="0 = unlimited">
+      </div>
+      <div class="form-group">
+        <label>Preferred Codec</label>
+        <select id="PREFERRED_CODEC">
+          <option value="any"  {% if settings.PREFERRED_CODEC == 'any'  %}selected{% endif %}>Any</option>
+          <option value="x265" {% if settings.PREFERRED_CODEC == 'x265' %}selected{% endif %}>x265 (HEVC)</option>
+          <option value="x264" {% if settings.PREFERRED_CODEC == 'x264' %}selected{% endif %}>x264 (AVC)</option>
+          <option value="av1"  {% if settings.PREFERRED_CODEC == 'av1'  %}selected{% endif %}>AV1</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>qBittorrent Category Tag</label>
+        <input type="text" id="QBITTORRENT_CATEGORY" value="{{ settings.QBITTORRENT_CATEGORY }}" placeholder="hookreel-movies">
+      </div>
+      <div class="flex-gap">
+        <button class="btn btn-primary btn-sm" onclick="saveSection(['PREFERRED_RESOLUTION','MAX_FILE_SIZE_GB','PREFERRED_CODEC','QBITTORRENT_CATEGORY'], this)">Save</button>
+        <span class="save-confirm" id="confirm-prefs">✓ Saved</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Section 7: ClamAV -->
+  <div class="settings-section">
+    <div class="settings-section-header" onclick="toggleSection(this)">
+      <span class="settings-section-title">🛡️ Malware Scanning (ClamAV)</span>
+      <span class="settings-section-arrow">▼</span>
+    </div>
+    <div class="settings-section-body">
+      <p class="form-note mb-12">ClamAV is best-effort — the pipeline continues if the scanner is unavailable.</p>
+      <div class="form-group">
+        <label>ClamAV Host</label>
+        <input type="text" id="CLAMAV_HOST" value="{{ settings.CLAMAV_HOST }}" placeholder="hookreel-clamav">
+      </div>
+      <div class="form-group">
+        <label>ClamAV Port</label>
+        <input type="number" id="CLAMAV_PORT" value="{{ settings.CLAMAV_PORT }}" placeholder="3310">
+      </div>
+      <div class="flex-gap">
+        <button class="btn btn-primary btn-sm" onclick="saveSection(['CLAMAV_HOST','CLAMAV_PORT'], this)">Save</button>
+        <button class="btn btn-secondary btn-sm" onclick="testConnection('clamav', this)">Test Connection</button>
+        <span class="save-confirm" id="confirm-clamav">✓ Saved</span>
+      </div>
+      <div id="test-clamav" class="test-result hidden"></div>
+    </div>
+  </div>
+
+  <!-- Section 8: Telegram -->
+  <div class="settings-section">
+    <div class="settings-section-header" onclick="toggleSection(this)">
+      <span class="settings-section-title">✈️ Telegram</span>
+      <span class="settings-section-arrow">▼</span>
+    </div>
+    <div class="settings-section-body">
+      <div class="form-group">
+        <label>Bot Token</label>
+        <div class="input-with-reveal">
+          <input type="password" id="TELEGRAM_BOT_TOKEN" value="{{ settings.TELEGRAM_BOT_TOKEN }}">
+          <button class="reveal-btn" onclick="toggleReveal('TELEGRAM_BOT_TOKEN', this)">Show</button>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Allowed User IDs (comma-separated)</label>
+        <input type="text" id="TELEGRAM_ALLOWED_USER_ID" value="{{ settings.TELEGRAM_ALLOWED_USER_ID }}" placeholder="123456789,987654321">
+      </div>
+      <div class="flex-gap mb-16">
+        <button class="btn btn-primary btn-sm" onclick="saveSection(['TELEGRAM_BOT_TOKEN','TELEGRAM_ALLOWED_USER_ID'], this)">Save</button>
+        <span class="save-confirm" id="confirm-telegram">✓ Saved</span>
+      </div>
+
+      <!-- Pairing code generator -->
+      <div class="card mt-8">
+        <div class="card-header">
+          <span class="card-title">Pair a Telegram Account</span>
+        </div>
+        <p class="text-muted mb-12" style="font-size:0.875rem;">
+          Generate a one-time code. On Telegram, send <strong>/pair 123456</strong> to the HookReel bot.
+          The code expires after 10 minutes.
+        </p>
+        <button class="btn btn-secondary btn-sm" onclick="generatePairingCode()">Generate Pairing Code</button>
+        <div id="pairing-code-display" class="hidden">
+          <div class="pairing-code-display" id="pairing-code-value">——</div>
+          <p class="text-muted" style="font-size:0.8rem;text-align:center;">
+            Send this to the HookReel bot: <strong>/pair &lt;code&gt;</strong><br>
+            Expires in 10 minutes.
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<!-- Section 9: RTMP Cinema -->
+  <div class="settings-section">
+    <div class="settings-section-header" onclick="toggleSection(this)">
+      <span class="settings-section-title">&#127909; RTMP Cinema</span>
+      <span class="settings-section-arrow">&#9660;</span>
+    </div>
+    <div class="settings-section-body">
+      <p class="form-note mb-12">
+        Stream movies directly to a private Telegram group as a live broadcast.
+        Requires a Telegram group with your bot added as admin.
+      </p>
+
+      <div class="form-group">
+        <label>RTMP Server URL</label>
+        <div class="input-with-reveal">
+          <input type="password" id="TELEGRAM_RTMP_URL"
+            value="{{ settings.TELEGRAM_RTMP_URL }}"
+            placeholder="rtmps://dc5-1.rtmp.t.me/s/...">
+          <button class="reveal-btn"
+            onclick="toggleReveal('TELEGRAM_RTMP_URL', this)">Show</button>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label>Stream Key</label>
+        <div class="input-with-reveal">
+          <input type="password" id="TELEGRAM_RTMP_KEY"
+            value="{{ settings.TELEGRAM_RTMP_KEY }}"
+            placeholder="Your stream key">
+          <button class="reveal-btn"
+            onclick="toggleReveal('TELEGRAM_RTMP_KEY', this)">Show</button>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label>Cinema Group Link</label>
+        <input type="text" id="TELEGRAM_CINEMA_LINK"
+          value="{{ settings.TELEGRAM_CINEMA_LINK }}"
+          placeholder="https://t.me/your_group">
+      </div>
+
+      <div class="flex-gap mb-16">
+        <button class="btn btn-primary btn-sm"
+          onclick="saveSection(['TELEGRAM_RTMP_URL','TELEGRAM_RTMP_KEY','TELEGRAM_CINEMA_LINK'], this)">Save</button>
+        <span class="save-confirm" id="confirm-rtmp">[OK] Saved</span>
+      </div>
+
+      <!-- Setup guide (collapsible) -->
+      <div class="settings-section" id="rtmp-guide-section">
+        <div class="settings-section-header" onclick="toggleSection(this)"
+          style="background:var(--bg-input);">
+          <span class="settings-section-title"
+            style="font-size:0.875rem;">Show setup guide</span>
+          <span class="settings-section-arrow">&#9660;</span>
+        </div>
+        <div class="settings-section-body"
+          style="font-size:0.875rem;line-height:1.8;">
+          <strong>How to set up Telegram Cinema</strong>
+          <ol style="margin:10px 0 10px 18px;color:var(--text-secondary);">
+            <li>Create a private Telegram group.</li>
+            <li>Add your HookReel bot to the group as admin.</li>
+            <li>Tap the group name at the top.</li>
+            <li>Tap More -> Start Live Stream -> Stream with third-party app.</li>
+            <li>Copy the Server URL and Stream Key shown.</li>
+            <li>Paste them into the fields above and save.</li>
+          </ol>
+          <p class="text-muted">
+            IMPORTANT: Each time you want to stream, you must first tap
+            Start Streaming in the Telegram group, then ask your agent
+            to stream the movie. The bot will remind you when to do this.
+          </p>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+
+  <!-- Section 10: Web UI -->
+  <div class="settings-section">
+    <div class="settings-section-header" onclick="toggleSection(this)">
+      <span class="settings-section-title">🌐 Web UI</span>
+      <span class="settings-section-arrow">▼</span>
+    </div>
+    <div class="settings-section-body">
+      <p class="form-note mb-12">Password changes take effect immediately. Other settings changes require clicking Restart Agent to take effect.</p>
+      <div class="form-group">
+        <label>New Password</label>
+        <input type="password" id="WEBUI_PASSWORD" placeholder="Enter new password">
+      </div>
+      <div class="form-group">
+        <label>Confirm New Password</label>
+        <input type="password" id="WEBUI_PASSWORD_CONFIRM" placeholder="Confirm new password">
+      </div>
+      <div class="flex-gap">
+        <button class="btn btn-primary btn-sm" onclick="changePassword()">Change Password</button>
+        <span class="save-confirm" id="confirm-webui">✓ Saved</span>
+      </div>
+      <div id="password-error" class="alert alert-danger hidden mt-8"></div>
+    </div>
+  </div>
+
+  <!-- Section 11: System & Maintenance -->
+  <div class="settings-section">
+    <div class="settings-section-header" onclick="toggleSection(this)">
+      <span class="settings-section-title">🔧 System &amp; Maintenance</span>
+      <span class="settings-section-arrow">▼</span>
+    </div>
+    <div class="settings-section-body">
+      <div class="form-group">
+        <label>Log Level</label>
+        <select id="LOG_LEVEL">
+          <option value="DEBUG"   {% if settings.LOG_LEVEL == 'DEBUG'   %}selected{% endif %}>DEBUG</option>
+          <option value="INFO"    {% if settings.LOG_LEVEL == 'INFO'    %}selected{% endif %}>INFO</option>
+          <option value="WARNING" {% if settings.LOG_LEVEL == 'WARNING' %}selected{% endif %}>WARNING</option>
+          <option value="ERROR"   {% if settings.LOG_LEVEL == 'ERROR'   %}selected{% endif %}>ERROR</option>
+        </select>
+      </div>
+      <div class="flex-gap mb-16">
+        <button class="btn btn-primary btn-sm" onclick="saveSection(['LOG_LEVEL'], this)">Save</button>
+        <span class="save-confirm" id="confirm-loglevel">✓ Saved</span>
+      </div>
+
+      <div class="flex-gap mb-12" style="flex-wrap:wrap;">
+        <button class="btn btn-secondary btn-sm" onclick="runCleanup()">Clean Up Orphaned Downloads</button>
+        <button class="btn btn-secondary btn-sm" onclick="runDeleteTestRows()">Delete Test Rows</button>
+        <a href="/logs" class="btn btn-secondary btn-sm">View Logs</a>
+      </div>
+      <div id="maintenance-result" class="hidden alert alert-info mt-8"></div>
+
+      <div class="danger-zone mt-16">
+        <div class="danger-zone-title">⚠ Danger Zone</div>
+        <button class="btn btn-danger btn-sm" onclick="restartAgent()">Restart Agent</button>
+        <p class="form-note mt-8">Restarts the main polling loop. Does not restart the container.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Section 12: File Management -->
+  <div class="settings-section">
+    <div class="settings-section-header" onclick="toggleSection(this)">
+      <span class="settings-section-title">🗑️ File Management</span>
+      <span class="settings-section-arrow">▼</span>
+    </div>
+    <div class="settings-section-body">
+      <p class="form-note mb-12">
+        Controls whether the AI agent is allowed to delete or move media files from your library.
+        This is disabled by default.
+      </p>
+
+      {% if delete_enabled %}
+      <div class="alert alert-danger mb-12">
+        ⚠️ File deletion is currently <strong>enabled</strong>.
+        The agent can permanently delete media files. This cannot be undone.
+      </div>
+      {% else %}
+      <div class="alert alert-info mb-12">
+        File deletion is currently <strong>disabled</strong>. The agent cannot delete or move files.
+      </div>
+      {% endif %}
+
+      <div class="form-group">
+        <label>Allow agent to delete and move media files</label>
+        <div class="flex-gap mt-8">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+            <input type="checkbox" id="DELETE_ENABLED_TOGGLE"
+              {% if delete_enabled %}checked{% endif %}
+              onchange="toggleDeleteEnabled(this)">
+            Enable file deletion and move operations
+          </label>
+        </div>
+        <p class="form-note mt-8">
+          When enabled, a warning banner will appear at the top of this page as a reminder.
+          Toggle this off immediately after any deletion tasks are complete.
+        </p>
+      </div>
+
+      <div id="delete-confirm-box" class="hidden alert alert-warning mt-8">
+        &#9888; <strong>Are you sure?</strong> Enabling this allows the AI agent to permanently
+        delete files from your library. This cannot be undone.
+        <div class="flex-gap mt-8">
+          <button class="btn btn-danger btn-sm" onclick="confirmEnableDeletion()">Yes, enable deletion</button>
+          <button class="btn btn-secondary btn-sm" onclick="cancelEnableDeletion()">Cancel</button>
+        </div>
+      </div>
+
+      <!-- Media Sources subsection -->
+      <div class="mt-16">
+        <h3 style="font-size:1rem;margin-bottom:8px;">Media Sources</h3>
+        <p class="form-note mb-12">
+          Default folders are set at install time. Add extra sources for
+          portable drives, network shares, or secondary drives.
+          Extra sources are read-only -- HookReel never writes to them.
+        </p>
+
+        <div class="card mb-12">
+          <div class="card-header">
+            <span class="card-title">Default Folders</span>
+          </div>
+          <div style="font-size:0.875rem;padding:8px 0;">
+            <div class="flex-gap mb-4">
+              <span class="text-muted" style="min-width:80px;">Movies:</span>
+              <code style="background:var(--bg-input);padding:2px 8px;border-radius:4px;">
+                {{ settings.MOVIES_PATH }}
+              </code>
+            </div>
+            <div class="flex-gap">
+              <span class="text-muted" style="min-width:80px;">TV:</span>
+              <code style="background:var(--bg-input);padding:2px 8px;border-radius:4px;">
+                {{ settings.TV_PATH }}
+              </code>
+            </div>
+          </div>
+        </div>
+
+        <div id="extra-sources-list" class="mb-12">
+          <p class="text-muted" style="font-size:0.875rem;">Loading extra sources...</p>
+        </div>
+
+        <button class="btn btn-secondary btn-sm mb-16"
+          onclick="showAddSourceForm()">+ Add Media Source</button>
+
+        <div id="add-source-form" class="hidden card mb-16">
+          <div class="card-header">
+            <span class="card-title">Add Media Source</span>
+          </div>
+          <div class="form-group mt-8">
+            <label>Label (e.g. Portable Drive)</label>
+            <input type="text" id="new-source-label" placeholder="Portable Drive">
+          </div>
+          <div class="form-group">
+            <label>Path on your server (must already be mounted)</label>
+            <input type="text" id="new-source-path" placeholder="/mnt/portable/Movies">
+          </div>
+          <div class="flex-gap mt-8">
+            <button class="btn btn-primary btn-sm"
+              onclick="addMediaSource()">Add Source</button>
+            <button class="btn btn-secondary btn-sm"
+              onclick="hideAddSourceForm()">Cancel</button>
+          </div>
+          <div id="add-source-result" class="hidden mt-8"></div>
+        </div>
+
+        <!-- Scan Library button -->
+        <div class="card mt-8">
+          <div class="card-header">
+            <span class="card-title">Scan Library</span>
+          </div>
+          <p class="text-muted mb-12" style="font-size:0.875rem;">
+            Scan all media sources for new content and add it to HookReel.
+            This may take a few minutes for large libraries.
+          </p>
+          <button id="scan-btn" class="btn btn-primary btn-sm"
+            onclick="startLibraryScan()">Scan Library for New Content</button>
+          <div id="scan-log" class="hidden mt-8"
+            style="background:var(--bg-input);border-radius:6px;padding:12px;
+                   max-height:200px;overflow-y:auto;font-size:0.8rem;
+                   font-family:monospace;white-space:pre-wrap;"></div>
+          <div id="scan-summary" class="hidden alert alert-success mt-8"></div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+
+  <!-- Section 13: Remote Access (Tailscale) -->
+  <div class="settings-section">
+    <div class="settings-section-header" onclick="toggleSection(this)">
+      <span class="settings-section-title">🔒 Remote Access (Tailscale)</span>
+      <span class="settings-section-arrow">▼</span>
+    </div>
+    <div class="settings-section-body">
+
+      <!-- Security note -->
+      <div class="alert alert-info mb-12">
+        Your HookReel web UI is only accessible on your home network and via Tailscale.
+        It is never exposed to the public internet. Always use the HookReel login password
+        when accessing remotely.
+      </div>
+
+      <!-- Status panel -->
+      <div class="card mb-12" id="tailscale-status-panel">
+        <p class="text-muted">Loading Tailscale status...</p>
+      </div>
+
+      <!-- Setup guide (collapsed by default) -->
+      <div class="settings-section" id="tailscale-guide-section">
+        <div class="settings-section-header" onclick="toggleSection(this)" style="background:var(--bg-input);">
+          <span class="settings-section-title" style="font-size:0.875rem;">Show setup guide</span>
+          <span class="settings-section-arrow">▼</span>
+        </div>
+        <div class="settings-section-body" style="font-size:0.875rem;line-height:1.8;">
+          <strong>Remote access via Tailscale</strong>
+          <ol style="margin:10px 0 10px 18px;color:var(--text-secondary);">
+            <li>Install Tailscale on your server:<br>
+              <code style="background:var(--bg-input);padding:2px 6px;border-radius:4px;font-size:0.8rem;">
+                curl -fsSL https://tailscale.com/install.sh | sh
+              </code><br>
+              <code style="background:var(--bg-input);padding:2px 6px;border-radius:4px;font-size:0.8rem;">
+                sudo tailscale up
+              </code>
+            </li>
+            <li>Install Tailscale on your phone or laptop from
+              <a href="https://tailscale.com/download" target="_blank">tailscale.com/download</a>
+            </li>
+            <li>Sign in to the same Tailscale account on both devices.</li>
+            <li>Access HookReel at:<br>
+              <code style="background:var(--bg-input);padding:2px 6px;border-radius:4px;font-size:0.8rem;">
+                http://[your-tailscale-ip]:8765
+              </code>
+            </li>
+          </ol>
+          <p class="text-muted">No port forwarding or firewall changes needed.</p>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+  function toggleSection(header) {
+    var section = header.parentElement;
+    section.classList.toggle('open');
+  }
+
+  function toggleReveal(fieldId, btn) {
+    var input = document.getElementById(fieldId);
+    if (input.type === 'password') {
+      input.type = 'text';
+      btn.textContent = 'Hide';
+    } else {
+      input.type = 'password';
+      btn.textContent = 'Show';
+    }
+  }
+
+  function showConfirm(confirmId) {
+    var el = document.getElementById(confirmId);
+    if (!el) return;
+    el.classList.add('show');
+    setTimeout(function() { el.classList.remove('show'); }, 3000);
+  }
+
+  function saveSection(keys, btn) {
+    var updates = {};
+    var needsRestart = false;
+    var restartKeys = ['QBITTORRENT_HOST','QBITTORRENT_PORT','PROWLARR_HOST',
+                       'PROWLARR_PORT','PROWLARR_API_KEY','JELLYFIN_HOST',
+                       'JELLYFIN_PORT','JELLYFIN_API_KEY','AI_MODEL_ENDPOINT',
+                       'AI_MODEL_NAME','AI_API_KEY','TELEGRAM_BOT_TOKEN',
+                       'CLAMAV_HOST','CLAMAV_PORT'];
+
+    keys.forEach(function(key) {
+      var el = document.getElementById(key);
+      if (el) {
+        updates[key] = el.value;
+        if (restartKeys.indexOf(key) !== -1) needsRestart = true;
+      }
+    });
+
+    btn.disabled = true;
+    fetch('/api/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updates)
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.success) {
+        var section = btn.closest('.settings-section-body');
+        var confirm = section.querySelector('.save-confirm');
+        if (confirm) {
+          confirm.classList.add('show');
+          setTimeout(function() { confirm.classList.remove('show'); }, 3000);
+        }
+        if (needsRestart) {
+          document.getElementById('restart-banner').classList.remove('hidden');
+        }
+      } else {
+        alert('Save failed: ' + (data.error || 'unknown error'));
+      }
+    })
+    .catch(function() { alert('Save failed — network error'); })
+    .finally(function() { btn.disabled = false; });
+  }
+
+  function restartAgentNow() {
+    var btn = document.getElementById('restart-now-btn');
+    var status = document.getElementById('restart-now-status');
+    btn.disabled = true;
+    btn.textContent = 'Restarting...';
+    status.textContent = '';
+    fetch('/api/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'restart_agent' })
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.success) {
+        status.textContent = '[OK] Agent restarting — bot will reconnect in a few seconds.';
+        document.getElementById('restart-banner').classList.add('hidden');
+      } else {
+        status.textContent = 'Restart failed: ' + (data.error || 'unknown error');
+        btn.disabled = false;
+        btn.textContent = 'Restart Now';
+      }
+    })
+    .catch(function() {
+      status.textContent = 'Restart failed — network error';
+      btn.disabled = false;
+      btn.textContent = 'Restart Now';
+    });
+  }
+
+  function testConnection(service, btn) {
+    var resultEl = document.getElementById('test-' + service);
+    btn.disabled = true;
+    btn.textContent = 'Testing...';
+    if (resultEl) {
+      resultEl.className = 'test-result hidden';
+      resultEl.textContent = '';
+    }
+
+    fetch('/api/settings/test', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ service: service })
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (resultEl) {
+        resultEl.className = 'test-result ' + (data.success ? 'success' : 'failure');
+        resultEl.textContent = (data.success ? '✓ ' : '✗ ') + (data.message || '');
+        resultEl.classList.remove('hidden');
+      }
+    })
+    .catch(function() {
+      if (resultEl) {
+        resultEl.className = 'test-result failure';
+        resultEl.textContent = '✗ Network error';
+        resultEl.classList.remove('hidden');
+      }
+    })
+    .finally(function() {
+      btn.disabled = false;
+      btn.textContent = 'Test Connection';
+    });
+  }
+
+  function generatePairingCode() {
+    fetch('/api/pair/generate', { method: 'POST' })
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        if (data.code) {
+          document.getElementById('pairing-code-value').textContent = data.code;
+          document.getElementById('pairing-code-display').classList.remove('hidden');
+        }
+      })
+      .catch(function() { alert('Failed to generate pairing code'); });
+  }
+
+  function changePassword() {
+    var pw  = document.getElementById('WEBUI_PASSWORD').value;
+    var pw2 = document.getElementById('WEBUI_PASSWORD_CONFIRM').value;
+    var errEl = document.getElementById('password-error');
+
+    errEl.classList.add('hidden');
+    if (!pw) { errEl.textContent = 'Password cannot be empty.'; errEl.classList.remove('hidden'); return; }
+    if (pw !== pw2) { errEl.textContent = 'Passwords do not match.'; errEl.classList.remove('hidden'); return; }
+
+    fetch('/api/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ WEBUI_PASSWORD: pw })
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.success) {
+        document.getElementById('WEBUI_PASSWORD').value = '';
+        document.getElementById('WEBUI_PASSWORD_CONFIRM').value = '';
+        var confirm = document.getElementById('confirm-webui');
+        confirm.classList.add('show');
+        setTimeout(function() { confirm.classList.remove('show'); }, 3000);
+      } else {
+        errEl.textContent = 'Save failed: ' + (data.error || 'unknown');
+        errEl.classList.remove('hidden');
+      }
+    });
+  }
+
+  function runCleanup() {
+    var resultEl = document.getElementById('maintenance-result');
+    fetch('/api/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'cleanup_stuck' })
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      resultEl.textContent = 'Cleaned up ' + (data.count || 0) + ' orphaned download(s).';
+      resultEl.className = 'alert alert-success mt-8';
+    })
+    .catch(function() {
+      resultEl.textContent = 'Cleanup failed.';
+      resultEl.className = 'alert alert-danger mt-8';
+    });
+  }
+
+  function runDeleteTestRows() {
+    var resultEl = document.getElementById('maintenance-result');
+    fetch('/api/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'delete_test_rows' })
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      resultEl.textContent = 'Deleted ' + (data.count || 0) + ' test row(s).';
+      resultEl.className = 'alert alert-success mt-8';
+    })
+    .catch(function() {
+      resultEl.textContent = 'Delete failed.';
+      resultEl.className = 'alert alert-danger mt-8';
+    });
+  }
+
+  function restartAgent() {
+    if (!confirm('Restart the HookReel agent polling loop?')) return;
+    fetch('/api/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'restart_agent' })
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      alert(data.message || 'Restart triggered.');
+    })
+    .catch(function() { alert('Restart request failed.'); });
+  }
+
+  // ── File Management toggle ─────────────────────────────────────────────────
+
+  function toggleDeleteEnabled(checkbox) {
+    if (checkbox.checked) {
+      // Show confirmation box before enabling
+      checkbox.checked = false;
+      document.getElementById('delete-confirm-box').classList.remove('hidden');
+    } else {
+      // Disabling — no confirmation needed
+      saveDeleteEnabled(false);
+    }
+  }
+
+  function confirmEnableDeletion() {
+    document.getElementById('delete-confirm-box').classList.add('hidden');
+    document.getElementById('DELETE_ENABLED_TOGGLE').checked = true;
+    saveDeleteEnabled(true);
+  }
+
+  function cancelEnableDeletion() {
+    document.getElementById('delete-confirm-box').classList.add('hidden');
+    document.getElementById('DELETE_ENABLED_TOGGLE').checked = false;
+  }
+
+  function saveDeleteEnabled(enabled) {
+    fetch('/api/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ DELETE_ENABLED: enabled ? 'true' : 'false' })
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.success) {
+        // Reload page so the banner updates correctly
+        location.reload();
+      } else {
+        alert('Failed to save setting.');
+      }
+    })
+    .catch(function() { alert('Network error saving setting.'); });
+  }
+
+  // ── Tailscale status panel ─────────────────────────────────────────────────
+
+  function loadTailscaleStatus() {
+    fetch('/api/tailscale/status')
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        var panel = document.getElementById('tailscale-status-panel');
+        if (!panel) return;
+
+        var dot    = data.running ? '🟢' : '🔴';
+        var status = data.running ? 'Running' : 'Not running';
+        var ipLine = data.ip
+          ? '<div class="flex-gap mt-8">' +
+            '<span class="text-muted" style="font-size:0.875rem;">Remote URL:</span>' +
+            '<code id="ts-url" style="background:var(--bg-input);padding:2px 8px;border-radius:4px;font-size:0.875rem;">http://' + data.ip + ':8765</code>' +
+            '<button class="btn btn-secondary btn-sm" onclick="copyTsUrl()">Copy</button>' +
+            '</div>'
+          : '<p class="text-muted mt-8" style="font-size:0.875rem;">No Tailscale IP detected.</p>';
+
+        panel.innerHTML =
+          '<div class="flex-gap mb-8">' +
+            '<span style="font-size:1.1rem;">' + dot + '</span>' +
+            '<strong>Tailscale: ' + status + '</strong>' +
+          '</div>' +
+          (data.hostname ? '<div class="text-muted" style="font-size:0.875rem;">Hostname: ' + data.hostname + '</div>' : '') +
+          (data.device_count ? '<div class="text-muted" style="font-size:0.875rem;">Devices on tailnet: ' + data.device_count + '</div>' : '') +
+          ipLine;
+
+        if (data.running) {
+          var guide = document.getElementById('tailscale-guide-section');
+          if (guide) guide.classList.remove('open');
+        }
+      })
+      .catch(function() {
+        var panel = document.getElementById('tailscale-status-panel');
+        if (panel) panel.innerHTML = '<p class="text-muted">Could not check Tailscale status.</p>';
+      });
+  }
+
+  function copyTsUrl() {
+    var el = document.getElementById('ts-url');
+    if (!el) return;
+    navigator.clipboard.writeText(el.textContent).then(function() {
+      alert('Copied: ' + el.textContent);
+    }).catch(function() {
+      alert(el.textContent);
+    });
+  }
+
+  loadTailscaleStatus();
+  setInterval(loadTailscaleStatus, 30000);
+
+  // ── Media Sources ──────────────────────────────────────────────────────────
+
+  function loadExtraSources() {
+    fetch('/api/library/sources')
+      .then(function(r) { return r.json(); })
+      .then(function(sources) {
+        var el = document.getElementById('extra-sources-list');
+        if (!el) return;
+        var extras = sources.filter(function(s) { return s.type === 'extra'; });
+        if (extras.length === 0) {
+          el.innerHTML = '<p class="text-muted" style="font-size:0.875rem;">No extra media sources configured.</p>';
+          return;
+        }
+        var html = '<table style="width:100%;font-size:0.875rem;border-collapse:collapse;">';
+        html += '<tr style="color:var(--text-secondary);">';
+        html += '<th style="text-align:left;padding:4px 8px;">Label</th>';
+        html += '<th style="text-align:left;padding:4px 8px;">Path</th>';
+        html += '<th style="text-align:left;padding:4px 8px;">Status</th>';
+        html += '</tr>';
+        extras.forEach(function(s) {
+          var status = s.mounted
+            ? '<span style="color:var(--color-success);">[OK] Mounted</span>'
+            : '<span style="color:var(--color-danger);">Offline</span>';
+          html += '<tr>';
+          html += '<td style="padding:4px 8px;">' + s.label + '</td>';
+          html += '<td style="padding:4px 8px;font-family:monospace;">' + s.path + '</td>';
+          html += '<td style="padding:4px 8px;">' + status + '</td>';
+          html += '</tr>';
+        });
+        html += '</table>';
+        el.innerHTML = html;
+      })
+      .catch(function() {
+        var el = document.getElementById('extra-sources-list');
+        if (el) el.innerHTML = '<p class="text-muted">Could not load media sources.</p>';
+      });
+  }
+
+  function showAddSourceForm() {
+    document.getElementById('add-source-form').classList.remove('hidden');
+  }
+
+  function hideAddSourceForm() {
+    document.getElementById('add-source-form').classList.add('hidden');
+    document.getElementById('new-source-label').value = '';
+    document.getElementById('new-source-path').value = '';
+    document.getElementById('add-source-result').classList.add('hidden');
+  }
+
+  function addMediaSource() {
+    var label = document.getElementById('new-source-label').value.trim();
+    var path  = document.getElementById('new-source-path').value.trim();
+    var resultEl = document.getElementById('add-source-result');
+
+    if (!label || !path) {
+      resultEl.textContent = 'Both label and path are required.';
+      resultEl.className = 'alert alert-danger mt-8';
+      resultEl.classList.remove('hidden');
+      return;
+    }
+
+    fetch('/api/library/sources', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ label: label, path: path })
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.success) {
+        resultEl.textContent = 'Source added. A container restart is required to mount it.';
+        resultEl.className = 'alert alert-warning mt-8';
+        resultEl.classList.remove('hidden');
+        document.getElementById('restart-banner').classList.remove('hidden');
+        loadExtraSources();
+      } else {
+        resultEl.textContent = 'Failed: ' + (data.error || 'unknown error');
+        resultEl.className = 'alert alert-danger mt-8';
+        resultEl.classList.remove('hidden');
+      }
+    })
+    .catch(function() {
+      resultEl.textContent = 'Network error.';
+      resultEl.className = 'alert alert-danger mt-8';
+      resultEl.classList.remove('hidden');
+    });
+  }
+
+  // ── Library scan ───────────────────────────────────────────────────────────
+
+  function startLibraryScan() {
+    var btn     = document.getElementById('scan-btn');
+    var logEl   = document.getElementById('scan-log');
+    var sumEl   = document.getElementById('scan-summary');
+
+    btn.disabled = true;
+    btn.textContent = 'Scanning...';
+    logEl.textContent = '';
+    logEl.classList.remove('hidden');
+    sumEl.classList.add('hidden');
+
+    fetch('/api/library/scan', { method: 'POST' })
+      .then(function(response) {
+        var reader = response.body.getReader();
+        var decoder = new TextDecoder();
+        var buffer = '';
+
+        function read() {
+          reader.read().then(function(result) {
+            if (result.done) {
+              btn.disabled = false;
+              btn.textContent = 'Scan Library for New Content';
+              return;
+            }
+            buffer += decoder.decode(result.value, { stream: true });
+            var parts = buffer.split('\n\n');
+            buffer = parts.pop();
+            parts.forEach(function(part) {
+              if (!part.startsWith('data: ')) return;
+              try {
+                var obj = JSON.parse(part.slice(6));
+                if (obj.line) {
+                  logEl.textContent += obj.line + '\n';
+                  logEl.scrollTop = logEl.scrollHeight;
+                }
+                if (obj.done && obj.summary) {
+                  var s = obj.summary;
+                  sumEl.textContent = 'Scan complete: ' +
+                    s.movies_added + ' movies added, ' +
+                    s.tv_added + ' TV episodes added, ' +
+                    s.errors + ' errors.';
+                  sumEl.classList.remove('hidden');
+                  loadExtraSources();
+                }
+                if (obj.error) {
+                  sumEl.textContent = 'Scan error: ' + obj.error;
+                  sumEl.className = 'alert alert-danger mt-8';
+                  sumEl.classList.remove('hidden');
+                }
+              } catch(e) {}
+            });
+            read();
+          });
+        }
+        read();
+      })
+      .catch(function(err) {
+        btn.disabled = false;
+        btn.textContent = 'Scan Library for New Content';
+        sumEl.textContent = 'Scan failed: ' + err;
+        sumEl.className = 'alert alert-danger mt-8';
+        sumEl.classList.remove('hidden');
+      });
+  }
+
+  loadExtraSources();
+</script>
+
+
+    </div>
+  </div>
+
+</div>
+
+{% endblock %}

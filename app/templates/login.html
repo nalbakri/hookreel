@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="HookReel">
+  <meta name="theme-color" content="#1a1a2e">
+  <link rel="manifest" href="/static/manifest.json">
+  <link rel="stylesheet" href="/static/style.css">
+  <title>Login — HookReel</title>
+</head>
+<body>
+
+<div class="login-page">
+  <div class="login-card">
+
+    <div class="login-brand">
+      <div class="login-brand-name">⚓ Hook<span>Reel</span></div>
+      <div class="login-tagline">Your AI media quartermaster</div>
+    </div>
+
+    {% if error %}
+    <div class="login-error">{{ error }}</div>
+    {% endif %}
+
+    <form method="POST" action="/login">
+      <div class="form-group">
+        <label for="password">Password</label>
+        <input
+          type="password"
+          id="password"
+          name="password"
+          placeholder="Enter your password"
+          autofocus
+          autocomplete="current-password"
+        >
+      </div>
+      <button type="submit" class="btn btn-primary w-full">
+        Set Sail →
+      </button>
+    </form>
+
+  </div>
+</div>
+
+</body>
+</html>

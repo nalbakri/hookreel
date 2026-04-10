@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}Library — HookReel{% endblock %}
+
+{% block content %}
+<div class="page">
+  <div class="page-header">
+    <h1 class="page-title">Library</h1>
+    <p class="page-subtitle">{{ movies | length }} movie(s) in your collection</p>
+  </div>
+
+  <!-- Search box -->
+  <div class="library-search">
+    <input
+      type="text"
+      id="search-input"
+      placeholder="Search your library..."
+      value="{{ search or '' }}"
+    >
+  </div>
+
+  <!-- Movie grid -->
+  {% if movies %}
+  <div class="movie-grid" id="movie-grid">
+    {% for movie in movies %}
+    <div class="movie-card" data-title="{{ movie.title | lower }}">
+      <div class="movie-card-body">
+        <div class="movie-title">{{ movie.title }}</div>
+        <div class="movie-year">{{ movie.year or '—' }}</div>
+        <span class="badge badge-{{ movie.status }}">{{ movie.status }}</span>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  <p id="no-results" class="text-muted hidden mt-16">No movies match your search.</p>
+  {% else %}
+  <div class="card">
+    <p class="text-muted">Your library is empty. Ask HookReel to find a movie!</p>
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // Client-side filtering — no page reload needed
+  var searchInput = document.getElementById('search-input');
+  var cards = document.querySelectorAll('.movie-card');
+  var noResults = document.getElementById('no-results');
+
+  if (searchInput) {
+    searchInput.addEventListener('input', function() {
+      var query = this.value.toLowerCase().trim();
+      var visible = 0;
+
+      cards.forEach(function(card) {
+        var title = card.getAttribute('data-title') || '';
+        if (title.indexOf(query) !== -1) {
+          card.style.display = '';
+          visible++;
+        } else {
+          card.style.display = 'none';
+        }
+      });
+
+      if (noResults) {
+        noResults.classList.toggle('hidden', visible > 0);
+      }
+    });
+  }
+</script>
+{% endblock %}

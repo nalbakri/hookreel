@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="HookReel">
+  <meta name="theme-color" content="#1a1a2e">
+  <link rel="manifest" href="/static/manifest.json">
+  <link rel="stylesheet" href="/static/style.css">
+  <title>{% block title %}HookReel{% endblock %}</title>
+</head>
+<body>
+
+<!-- Navigation bar -->
+<nav class="nav">
+  <a href="/dashboard" class="nav-brand">⚓ Hook<span>Reel</span></a>
+
+  <!-- Desktop links -->
+  <ul class="nav-links">
+    <li><a href="/dashboard" {% if active_page == 'dashboard' %}class="active"{% endif %}>Dashboard</a></li>
+    <li><a href="/library"   {% if active_page == 'library'   %}class="active"{% endif %}>Library</a></li>
+    <li><a href="/tv"        {% if active_page == 'tv'        %}class="active"{% endif %}>TV</a></li>
+    <li><a href="/chat"      {% if active_page == 'chat'      %}class="active"{% endif %}>Chat</a></li>
+    <li><a href="/indexers"  {% if active_page == 'indexers'  %}class="active"{% endif %}>Indexers</a></li>
+    <li><a href="/downloader"{% if active_page == 'downloader'%}class="active"{% endif %}>Downloader</a></li>
+    <li><a href="/settings"  {% if active_page == 'settings'  %}class="active"{% endif %}>Settings</a></li>
+    <li><a href="/logout">Logout</a></li>
+  </ul>
+
+  <!-- Mobile hamburger -->
+  <button class="nav-hamburger" id="hamburger" aria-label="Menu">☰</button>
+</nav>
+
+<!-- Mobile drawer -->
+<div class="nav-drawer" id="nav-drawer">
+  <a href="/dashboard" {% if active_page == 'dashboard' %}class="active"{% endif %}>📊 Dashboard</a>
+  <a href="/library"   {% if active_page == 'library'   %}class="active"{% endif %}>🎬 Library</a>
+  <a href="/tv"        {% if active_page == 'tv'        %}class="active"{% endif %}>📺 TV</a>
+  <a href="/chat"      {% if active_page == 'chat'      %}class="active"{% endif %}>💬 Chat</a>
+  <a href="/indexers"  {% if active_page == 'indexers'  %}class="active"{% endif %}>🔍 Indexers</a>
+  <a href="/downloader"{% if active_page == 'downloader'%}class="active"{% endif %}>⬇️ Downloader</a>
+  <a href="/settings"  {% if active_page == 'settings'  %}class="active"{% endif %}>⚙️ Settings</a>
+  <a href="/logout">🚪 Logout</a>
+</div>
+
+{% block content %}{% endblock %}
+
+<script>
+  // Hamburger menu toggle
+  const hamburger = document.getElementById('hamburger');
+  const drawer = document.getElementById('nav-drawer');
+  hamburger.addEventListener('click', function() {
+    drawer.classList.toggle('open');
+  });
+  // Close drawer when a link is tapped
+  drawer.querySelectorAll('a').forEach(function(link) {
+    link.addEventListener('click', function() {
+      drawer.classList.remove('open');
+    });
+  });
+</script>
+
+{% block scripts %}{% endblock %}
+
+</body>
+</html>

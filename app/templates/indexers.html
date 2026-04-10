@@ -1,0 +1,219 @@
+{% extends "base.html" %}
+{% block title %}Indexers — HookReel{% endblock %}
+
+{% block content %}
+<div class="page">
+  <div class="page-header">
+    <h1 class="page-title">Indexers</h1>
+    <p class="page-subtitle">Manage Prowlarr indexers and search sources</p>
+  </div>
+
+  <!-- Action bar -->
+  <div class="flex-gap mb-16" style="flex-wrap:wrap;">
+    <button class="btn btn-primary btn-sm" onclick="testAllIndexers()">Test All Indexers</button>
+    <button class="btn btn-secondary btn-sm" onclick="loadIndexers()">↻ Refresh</button>
+  </div>
+
+  <!-- Indexer list -->
+  <div class="section-title">Configured Indexers</div>
+  <div id="indexer-list">
+    <div class="card">
+      <p class="text-muted">Loading indexers...</p>
+    </div>
+  </div>
+
+  <!-- Indexer stats -->
+  <div class="section-title mt-16">Indexer Statistics</div>
+  <div id="indexer-stats">
+    <div class="card">
+      <p class="text-muted">Loading stats...</p>
+    </div>
+  </div>
+
+  <!-- Proxy settings -->
+  <div class="section-title mt-16">Proxy (Byparr / FlareSolverr)</div>
+  <div class="card mb-16">
+    <p class="form-note mb-12">Byparr is pre-configured in your HookReel Docker stack.</p>
+    <div class="form-group">
+      <label>Proxy Host URL</label>
+      <input type="text" id="proxy-host" placeholder="http://byparr:8191">
+    </div>
+    <div class="flex-gap">
+      <button class="btn btn-secondary btn-sm" onclick="testProxy()">Test Proxy</button>
+    </div>
+    <div id="test-proxy" class="test-result hidden mt-8"></div>
+  </div>
+
+  <!-- Prowlarr general settings -->
+  <div class="section-title mt-16">Prowlarr Host Settings</div>
+  <div class="card">
+    <div class="alert alert-warning mb-12">
+      Changing authentication settings may require updating HookReel's Prowlarr API key.
+    </div>
+    <div id="prowlarr-config-form">
+      <p class="text-muted">Loading configuration...</p>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+
+  function loadIndexers() {
+    var listEl = document.getElementById('indexer-list');
+    listEl.innerHTML = '<div class="card"><p class="text-muted">Loading...</p></div>';
+
+    fetch('/api/indexers')
+      .then(function(r) { return r.json(); })
+      .then(function(indexers) {
+        if (!indexers.length) {
+          listEl.innerHTML = '<div class="card"><p class="text-muted">No indexers configured in Prowlarr.</p></div>';
+          return;
+        }
+        listEl.innerHTML = '';
+        indexers.forEach(function(idx) {
+          var card = document.createElement('div');
+          card.className = 'indexer-card';
+          card.innerHTML =
+            '<div class="indexer-header">' +
+              '<div>' +
+                '<div class="indexer-name">' + escHtml(idx.name) + '</div>' +
+                '<div class="text-muted" style="font-size:0.8rem;">' +
+                  'Priority: ' + (idx.priority || '—') +
+                  ' &nbsp;|&nbsp; Protocol: ' + escHtml(idx.protocol || '—') +
+                '</div>' +
+              '</div>' +
+              '<label class="toggle toggle-wrap" title="' + (idx.enable ? 'Enabled' : 'Disabled') + '">' +
+                '<input type="checkbox" ' + (idx.enable ? 'checked' : '') +
+                  ' onchange="toggleIndexer(' + idx.id + ', this.checked)">' +
+                '<span class="toggle-slider"></span>' +
+              '</label>' +
+            '</div>' +
+            '<div class="indexer-actions">' +
+              '<button class="btn btn-secondary btn-sm" onclick="testIndexer(' + idx.id + ', this)">Test</button>' +
+              '<button class="btn btn-danger btn-sm" onclick="deleteIndexer(' + idx.id + ', \'' + escHtml(idx.name) + '\')">Remove</button>' +
+            '</div>';
+          listEl.appendChild(card);
+        });
+      })
+      .catch(function() {
+        listEl.innerHTML = '<div class="card"><p class="text-danger">Failed to load indexers. Is Prowlarr running?</p></div>';
+      });
+  }
+
+  function loadStats() {
+    var statsEl = document.getElementById('indexer-stats');
+    fetch('/api/indexers/stats')
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        var indexers = data.indexers || [];
+        if (!indexers.length) {
+          statsEl.innerHTML = '<div class="card"><p class="text-muted">No stats available yet.</p></div>';
+          return;
+        }
+        var html = '<div class="card"><table style="width:100%;border-collapse:collapse;font-size:0.85rem;">' +
+          '<tr style="color:var(--text-muted);text-align:left;">' +
+          '<th style="padding:6px 8px;">Indexer</th>' +
+          '<th style="padding:6px 8px;">Avg Response</th>' +
+          '<th style="padding:6px 8px;">Searches Today</th>' +
+          '<th style="padding:6px 8px;">Success Rate</th>' +
+          '</tr>';
+        indexers.forEach(function(s) {
+          html += '<tr style="border-top:1px solid var(--border);">' +
+            '<td style="padding:6px 8px;">' + escHtml(s.indexerName || '—') + '</td>' +
+            '<td style="padding:6px 8px;">' + (s.averageResponseTime || '—') + 'ms</td>' +
+            '<td style="padding:6px 8px;">' + (s.numberOfQueries || 0) + '</td>' +
+            '<td style="padding:6px 8px;">' + (s.percentSuccessful !== undefined ? s.percentSuccessful.toFixed(1) + '%' : '—') + '</td>' +
+            '</tr>';
+        });
+        html += '</table></div>';
+        statsEl.innerHTML = html;
+      })
+      .catch(function() {
+        statsEl.innerHTML = '<div class="card"><p class="text-muted">Stats unavailable.</p></div>';
+      });
+  }
+
+  function toggleIndexer(id, enabled) {
+    fetch('/api/indexers/' + id + '/toggle', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled: enabled })
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (!data.success) { alert('Toggle failed'); loadIndexers(); }
+    })
+    .catch(function() { alert('Toggle failed'); loadIndexers(); });
+  }
+
+  function testIndexer(id, btn) {
+    btn.disabled = true;
+    btn.textContent = 'Testing...';
+    fetch('/api/indexers/' + id + '/test', { method: 'POST' })
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        btn.textContent = data.success ? '✓ OK' : '✗ Failed';
+        btn.className = 'btn btn-sm ' + (data.success ? 'btn-success' : 'btn-danger');
+        setTimeout(function() {
+          btn.textContent = 'Test';
+          btn.className = 'btn btn-secondary btn-sm';
+          btn.disabled = false;
+        }, 3000);
+      })
+      .catch(function() {
+        btn.textContent = '✗ Error';
+        btn.disabled = false;
+      });
+  }
+
+  function testAllIndexers() {
+    fetch('/api/indexers/testall', { method: 'POST' })
+      .then(function(r) { return r.json(); })
+      .then(function() { alert('Test all triggered — check Prowlarr for results.'); })
+      .catch(function() { alert('Test all failed.'); });
+  }
+
+  function deleteIndexer(id, name) {
+    if (!confirm('Remove indexer "' + name + '"? This cannot be undone.')) return;
+    fetch('/api/indexers/' + id, { method: 'DELETE' })
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        if (data.success) { loadIndexers(); }
+        else { alert('Delete failed'); }
+      })
+      .catch(function() { alert('Delete failed'); });
+  }
+
+  function testProxy() {
+    var resultEl = document.getElementById('test-proxy');
+    resultEl.className = 'test-result hidden';
+    fetch('/api/settings/test', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ service: 'proxy' })
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      resultEl.className = 'test-result ' + (data.success ? 'success' : 'failure') + ' mt-8';
+      resultEl.textContent = (data.success ? '✓ ' : '✗ ') + (data.message || '');
+    })
+    .catch(function() {
+      resultEl.className = 'test-result failure mt-8';
+      resultEl.textContent = '✗ Network error';
+    });
+  }
+
+  function escHtml(str) {
+    var d = document.createElement('div');
+    d.textContent = str;
+    return d.innerHTML;
+  }
+
+  // Load on page ready
+  loadIndexers();
+  loadStats();
+</script>
+{% endblock %}

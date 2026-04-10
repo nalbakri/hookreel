@@ -1,0 +1,204 @@
+{% extends "base.html" %}
+
+{% block title %}Watch — HookReel{% endblock %}
+
+{% block content %}
+<div class="page">
+
+  <div class="page-header">
+    <h1 class="page-title">Watch</h1>
+    <p class="page-subtitle">Recent watches and active streams</p>
+  </div>
+
+  {% if delete_enabled is defined and not jellyfin_enabled %}
+  <!-- Active streams — only shown in HLS mode -->
+  <div class="card mb-4">
+    <div class="card-header flex-between">
+      <h2 class="card-title">Active Streams</h2>
+    </div>
+    <div class="card-body">
+      {% if active_streams %}
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Media ID</th>
+              <th>Started</th>
+              <th>Stream URL</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for stream in active_streams %}
+            <tr>
+              <td>{{ stream.media_id }}</td>
+              <td>{{ stream.started_at[:16] }}</td>
+              <td><code>{{ stream.stream_url }}</code></td>
+              <td>
+                <button class="btn btn-danger btn-sm"
+                  onclick="stopStream({{ stream.media_id }})">
+                  Stop
+                </button>
+                <button class="btn btn-secondary btn-sm"
+                  onclick="loadPlayer('{{ stream.stream_url }}')">
+                  Play
+                </button>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+
+        <!-- hls.js embedded player -->
+        <div class="mt-4">
+          <h3 class="section-title">Player</h3>
+          <video id="hls-player" controls style="width:100%;max-width:800px;background:#000;border-radius:8px;"></video>
+          <p class="text-muted mt-2" id="player-status">No stream loaded.</p>
+        </div>
+
+      {% else %}
+        <p class="text-muted">No active streams.</p>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+
+  {% if jellyfin_enabled %}
+  <!-- Jellyfin mode info banner -->
+  <div class="alert alert-info mb-4">
+    <strong>Jellyfin mode is active.</strong>
+    Watch links open directly in Jellyfin.
+    HLS streaming is not used.
+  </div>
+  {% endif %}
+
+  <!-- Watch history -->
+  <div class="card">
+    <div class="card-header flex-between">
+      <h2 class="card-title">Watch History</h2>
+      <span class="badge badge-secondary">{{ history|length }} item(s)</span>
+    </div>
+    <div class="card-body">
+      {% if history %}
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Type</th>
+              <th>Title</th>
+              <th>Watched</th>
+              <th>Status</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for entry in history %}
+            <tr>
+              <td>
+                {% if entry.media_type == "movie" %}
+                  🎬
+                {% else %}
+                  📺
+                {% endif %}
+                {{ entry.media_type }}
+              </td>
+              <td>{{ entry.title }}</td>
+              <td>{{ entry.watched_at[:16] }}</td>
+              <td>
+                {% if entry.completed %}
+                  <span class="badge badge-success">Completed</span>
+                {% else %}
+                  <span class="badge badge-secondary">In progress</span>
+                {% endif %}
+              </td>
+              <td>
+                {% if entry.media_type == "movie" %}
+                  <button class="btn btn-primary btn-sm"
+                    onclick="watchAgainMovie('{{ entry.title }}', {{ entry.media_id }})">
+                    Watch again
+                  </button>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% else %}
+        <p class="text-muted">No watch history yet. Ask HookReel to play something!</p>
+      {% endif %}
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<!-- hls.js from CDN — only loaded if needed -->
+<script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+
+<script>
+  // Auto-load stream from query parameter if present
+  const urlParams = new URLSearchParams(window.location.search);
+  const autoStream = urlParams.get('stream');
+  if (autoStream) {
+    loadPlayer(autoStream);
+  }
+
+  function loadPlayer(streamUrl) {
+    const video = document.getElementById('hls-player');
+    const status = document.getElementById('player-status');
+    if (!video) return;
+
+    if (Hls.isSupported()) {
+      const hls = new Hls();
+      hls.loadSource(streamUrl);
+      hls.attachMedia(video);
+      hls.on(Hls.Events.MANIFEST_PARSED, function () {
+        video.play();
+        if (status) status.textContent = 'Playing: ' + streamUrl;
+      });
+      hls.on(Hls.Events.ERROR, function (event, data) {
+        if (status) status.textContent = 'Stream error: ' + data.details;
+      });
+    } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+      // Safari native HLS support
+      video.src = streamUrl;
+      video.play();
+      if (status) status.textContent = 'Playing: ' + streamUrl;
+    } else {
+      if (status) status.textContent = 'HLS not supported in this browser. Open in VLC.';
+    }
+  }
+
+  function stopStream(mediaId) {
+    if (!confirm('Stop this stream?')) return;
+    fetch('/api/watch/stop/' + mediaId, { method: 'POST' })
+      .then(r => r.json())
+      .then(data => {
+        if (data.success) {
+          location.reload();
+        } else {
+          alert('Could not stop stream.');
+        }
+      });
+  }
+
+  function watchAgainMovie(title, movieId) {
+    fetch('/api/watch/movie', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: title, movie_id: movieId })
+    })
+    .then(r => r.json())
+    .then(data => {
+      if (data.error) {
+        alert('Error: ' + data.error);
+        return;
+      }
+      if (data.mode === 'jellyfin') {
+        window.open(data.web_link, '_blank');
+      } else if (data.mode === 'hls') {
+        loadPlayer(data.stream_url);
+      }
+    });
+  }
+</script>
+{% endblock %}

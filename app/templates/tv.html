@@ -1,0 +1,196 @@
+{% extends "base.html" %}
+{% set active_page = 'tv' %}
+
+{% block content %}
+<div class="page-header">
+  <h1>📺 TV Library</h1>
+  <p class="page-subtitle">{{ shows|length }} show(s) tracked</p>
+</div>
+
+{% if not shows %}
+<div class="empty-state">
+  <p>No TV shows tracked yet.</p>
+  <p>Ask HookReel in the <a href="/chat">Chat</a> to find and download a show.</p>
+</div>
+{% else %}
+<div class="tv-grid" id="tv-grid">
+  {% for show in shows %}
+  <div class="tv-card" id="show-{{ show.id }}">
+    <div class="tv-card-header" onclick="toggleShow({{ show.id }})">
+      <div class="tv-card-info">
+        <h3 class="tv-title">{{ show.title }}{% if show.year %} <span class="tv-year">({{ show.year }})</span>{% endif %}</h3>
+        <div class="tv-meta">
+          <span class="status-badge status-{{ show.status }}">{{ show.status }}</span>
+        </div>
+        <div class="tv-progress-bar-wrap">
+          {% if show.episode_count > 0 %}
+          {% set pct = ((show.complete_count / show.episode_count) * 100)|int %}
+          <div class="tv-progress-bar">
+            <div class="tv-progress-fill" style="width: {{ pct }}%"></div>
+          </div>
+          <span class="tv-progress-label">{{ show.complete_count }} / {{ show.episode_count }} episodes</span>
+          {% else %}
+          <span class="tv-progress-label">No episodes tracked yet</span>
+          {% endif %}
+        </div>
+      </div>
+      <span class="tv-chevron" id="chevron-{{ show.id }}">▶</span>
+    </div>
+
+    <div class="tv-episodes" id="episodes-{{ show.id }}" style="display:none">
+      <div class="tv-episodes-loading" id="loading-{{ show.id }}">Loading episodes…</div>
+      <div class="tv-episodes-content" id="content-{{ show.id }}"></div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+<style>
+.page-header { margin-bottom: 1.5rem; }
+.page-subtitle { color: var(--text-muted); margin-top: 0.25rem; }
+.empty-state { text-align: center; padding: 3rem; color: var(--text-muted); }
+.tv-grid { display: flex; flex-direction: column; gap: 1rem; }
+.tv-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.tv-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.25rem;
+  cursor: pointer;
+  user-select: none;
+}
+.tv-card-header:hover { background: var(--surface-hover, rgba(255,255,255,0.03)); }
+.tv-card-info { flex: 1; }
+.tv-title { margin: 0 0 0.4rem; font-size: 1rem; font-weight: 600; }
+.tv-year { color: var(--text-muted); font-weight: 400; }
+.tv-meta { margin-bottom: 0.5rem; }
+.tv-progress-bar-wrap { display: flex; align-items: center; gap: 0.75rem; }
+.tv-progress-bar {
+  flex: 1; max-width: 200px; height: 6px;
+  background: var(--border); border-radius: 3px; overflow: hidden;
+}
+.tv-progress-fill {
+  height: 100%; background: var(--accent, #7c6af7);
+  border-radius: 3px; transition: width 0.3s;
+}
+.tv-progress-label { font-size: 0.78rem; color: var(--text-muted); white-space: nowrap; }
+.tv-chevron {
+  font-size: 0.75rem; color: var(--text-muted);
+  transition: transform 0.2s; margin-left: 1rem;
+}
+.tv-chevron.open { transform: rotate(90deg); }
+.tv-episodes { border-top: 1px solid var(--border); padding: 1rem 1.25rem; }
+.tv-episodes-loading { color: var(--text-muted); font-size: 0.9rem; }
+.season-block { margin-bottom: 1.25rem; }
+.season-title {
+  font-size: 0.85rem; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.05em; color: var(--text-muted);
+  margin-bottom: 0.5rem;
+}
+.episode-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0.4rem 0; border-bottom: 1px solid var(--border);
+  font-size: 0.875rem;
+}
+.episode-row:last-child { border-bottom: none; }
+.episode-code { font-weight: 600; min-width: 60px; color: var(--accent, #7c6af7); }
+.episode-title { flex: 1; margin: 0 0.75rem; }
+.episode-airdate { color: var(--text-muted); font-size: 0.78rem; min-width: 90px; text-align: right; }
+.episode-actions { margin-left: 0.75rem; }
+.btn-download {
+  font-size: 0.75rem; padding: 0.2rem 0.6rem;
+  background: var(--accent, #7c6af7); color: #fff;
+  border: none; border-radius: 4px; cursor: pointer; text-decoration: none;
+}
+.btn-download:hover { opacity: 0.85; }
+.status-badge {
+  display: inline-block; font-size: 0.7rem; padding: 0.15rem 0.5rem;
+  border-radius: 4px; font-weight: 600; text-transform: uppercase;
+}
+.status-tracked   { background: #1e3a5f; color: #60a5fa; }
+.status-ended     { background: #1f2d1f; color: #4ade80; }
+.status-abandoned { background: #2d1f1f; color: #f87171; }
+.status-missing      { background: #2d2420; color: #fb923c; }
+.status-downloading  { background: #1e2d40; color: #38bdf8; }
+.status-complete     { background: #1a2e1a; color: #4ade80; }
+.status-failed       { background: #2d1a1a; color: #f87171; }
+.status-quarantined  { background: #2d2a10; color: #fbbf24; }
+</style>
+
+<script>
+const loadedShows = new Set();
+
+function toggleShow(showId) {
+  const panel = document.getElementById('episodes-' + showId);
+  const chevron = document.getElementById('chevron-' + showId);
+  const isOpen = panel.style.display !== 'none';
+  if (isOpen) {
+    panel.style.display = 'none';
+    chevron.classList.remove('open');
+  } else {
+    panel.style.display = 'block';
+    chevron.classList.add('open');
+    if (!loadedShows.has(showId)) {
+      loadEpisodes(showId);
+    }
+  }
+}
+
+async function loadEpisodes(showId) {
+  const loading = document.getElementById('loading-' + showId);
+  const content = document.getElementById('content-' + showId);
+  try {
+    const resp = await fetch('/api/tv/shows/' + showId + '/episodes');
+    const data = await resp.json();
+    loading.style.display = 'none';
+    if (!data.episodes || data.episodes.length === 0) {
+      content.innerHTML = '<p style="color:var(--text-muted)">No episodes tracked yet.</p>';
+      loadedShows.add(showId);
+      return;
+    }
+    // Group by season
+    const seasons = {};
+    for (const ep of data.episodes) {
+      const s = ep.season;
+      if (!seasons[s]) seasons[s] = [];
+      seasons[s].push(ep);
+    }
+    let html = '';
+    for (const season of Object.keys(seasons).sort((a,b) => a-b)) {
+      html += '<div class="season-block">';
+      html += '<div class="season-title">Season ' + String(season).padStart(2,'0') + '</div>';
+      for (const ep of seasons[season]) {
+        const code = 'S' + String(ep.season).padStart(2,'0') + 'E' + String(ep.episode).padStart(2,'0');
+        const title = ep.title || 'Unknown';
+        const airdate = ep.air_date || '';
+        const status = ep.status || 'missing';
+        let actionHtml = '';
+        if (status === 'missing') {
+          const msg = encodeURIComponent('Download ' + data.show.title + ' Season ' + ep.season + ' Episode ' + ep.episode);
+          actionHtml = '<a class="btn-download" href="/chat?msg=' + msg + '">Download</a>';
+        }
+        html += '<div class="episode-row">'
+          + '<span class="episode-code">' + code + '</span>'
+          + '<span class="episode-title">' + title + '</span>'
+          + '<span class="episode-airdate">' + airdate + '</span>'
+          + '<span class="status-badge status-' + status + '">' + status + '</span>'
+          + '<span class="episode-actions">' + actionHtml + '</span>'
+          + '</div>';
+      }
+      html += '</div>';
+    }
+    content.innerHTML = html;
+    loadedShows.add(showId);
+  } catch (err) {
+    loading.textContent = 'Failed to load episodes.';
+    console.error(err);
+  }
+}
+</script>
+{% endblock %}
