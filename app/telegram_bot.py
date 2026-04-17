@@ -155,6 +155,11 @@ class HookReelBot:
         self._register_handlers()
         logger.info("[HookReel] Telegram bot initialised")
 
+    def update_conversation_manager(self, new_manager) -> None:
+        """Update the ConversationManager reference after an agent restart."""
+        self.conversation_manager = new_manager
+        logger.info("[HookReel] Telegram bot: ConversationManager reference updated")
+
     def _load_static_allowed_ids(self) -> list:
         raw = config.TELEGRAM_ALLOWED_USER_ID
         ids = []

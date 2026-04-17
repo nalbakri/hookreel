@@ -98,6 +98,7 @@ def get_torrent_status(torrent_hash: str) -> dict:
     Returns a dict with progress, state, name, save_path, content_path.
     Returns None if not found.
     """
+    torrent_hash = torrent_hash.lower().strip()
     _ensure_logged_in()
     try:
         response = SESSION.get(
@@ -135,7 +136,7 @@ def get_torrent_hash_by_name(torrent_name: str) -> str:
     # Strategy 1: exact name match
     for torrent in all_torrents:
         if torrent.get("name", "").lower().strip() == search_term:
-            found_hash = torrent.get("hash")
+            found_hash = (torrent.get("hash") or "").lower().strip()
             logger.info(
                 "[HookReel] Hash lookup: exact match for '%s' → %s",
                 torrent_name, found_hash
@@ -146,7 +147,7 @@ def get_torrent_hash_by_name(torrent_name: str) -> str:
     for torrent in all_torrents:
         torrent_name_lower = torrent.get("name", "").lower().strip()
         if search_term in torrent_name_lower or torrent_name_lower in search_term:
-            found_hash = torrent.get("hash")
+            found_hash = (torrent.get("hash") or "").lower().strip()
             logger.info(
                 "[HookReel] Hash lookup: substring match '%s' ~ '%s' → %s",
                 torrent_name, torrent.get("name"), found_hash
@@ -167,7 +168,7 @@ def get_torrent_hash_by_name(torrent_name: str) -> str:
 
     # Require at least 3 words in common to avoid false positives
     if best_torrent and best_score >= 3:
-        found_hash = best_torrent.get("hash")
+        found_hash = (best_torrent.get("hash") or "").lower().strip()
         logger.info(
             "[HookReel] Hash lookup: word-overlap match (%d words) '%s' ~ '%s' → %s",
             best_score, torrent_name, best_torrent.get("name"), found_hash

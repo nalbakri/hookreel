@@ -52,6 +52,11 @@ you want to watch -- in plain language -- and HookReel handles everything.
 
 Open the web UI at http://[your-server-ip]:8765
 
+### Supported architectures
+Supports linux/amd64 and linux/arm64.
+ARM64 builds are provided for Raspberry Pi 4/5 and other ARM64 SBCs.
+Not yet tested on ARM hardware -- community feedback welcome.
+
 ### First run checklist
 
 1. Wait 2-3 minutes for ClamAV to load virus definitions

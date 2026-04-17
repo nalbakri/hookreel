@@ -1,0 +1,6 @@
+services:
+  hookreel:
+    build: .
+    volumes:
+      - ./app:/hookreel/app:ro
+      - ./main.py:/hookreel/main.py:ro

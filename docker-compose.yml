@@ -14,8 +14,8 @@ services:
     environment:
       - CLAMAV_NO_FRESHCLAM=false
   hookreel:
-    image: hookreel/hookreel:latest
     # build: .   # uncomment to build locally instead of pulling from Docker Hub
+    image: nalbakri/hookreel:latest
     container_name: hookreel
     restart: unless-stopped
     depends_on:

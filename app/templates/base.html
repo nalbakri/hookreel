@@ -9,12 +9,13 @@
   <link rel="manifest" href="/static/manifest.json">
   <link rel="stylesheet" href="/static/style.css">
   <title>{% block title %}HookReel{% endblock %}</title>
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
 </head>
 <body>
 
 <!-- Navigation bar -->
 <nav class="nav">
-  <a href="/dashboard" class="nav-brand">⚓ Hook<span>Reel</span></a>
+  <a href="/dashboard" class="nav-brand">&#9875; Hook<span>Reel</span></a><span class="nav-agent-name">v{{ version }} {{ version_name }}</span>
 
   <!-- Desktop links -->
   <ul class="nav-links">

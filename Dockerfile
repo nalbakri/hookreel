@@ -36,6 +36,10 @@ COPY app/ ./app/
 COPY main.py .
 COPY test_pipeline.py .
 COPY test_phase7b.py .
+COPY test_patch1.py .
+COPY docker-compose.dev.yml .
+COPY CONTRIBUTING.md .
+COPY .github/ ./.github/
 # -------------------------------------------------------
 # Expose port 8765 — reserved for the web UI (Phase 5+).
 # -------------------------------------------------------

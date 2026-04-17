@@ -65,7 +65,7 @@ RTMP_SCALE = get("RTMP_SCALE", "1280:-2")
 SESSION_EXPIRY_HOURS    = int(get("SESSION_EXPIRY_HOURS", "24"))
 RATE_LIMIT_ENABLED      = get("RATE_LIMIT_ENABLED", "true").lower() == "true"
 # --- Phase 8 ---
-VERSION = "1.0"
+VERSION = "1.0.1"
 VERSION_NAME = "Hook"
 # Extra media sources (up to 5, set during setup wizard)
 EXTRA_MEDIA_1 = get("EXTRA_MEDIA_1", "")

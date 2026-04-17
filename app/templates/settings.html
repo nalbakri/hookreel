@@ -194,7 +194,35 @@
     </div>
   </div>
 
-  <!-- Section 6: Download preferences -->
+<!-- Section 6: Agent Persona -->
+  <div class="settings-section">
+    <div class="settings-section-header" onclick="toggleSection(this)">
+      <span class="settings-section-title">&#129302; Agent Persona</span>
+      <span class="settings-section-arrow">&#9660;</span>
+    </div>
+    <div class="settings-section-body">
+      <div class="form-group">
+        <label>Agent Name</label>
+        <input type="text" id="persona-name" value="{{ agent_name }}" maxlength="30" placeholder="MrSmee">
+        <p class="form-note">Letters, numbers, spaces and hyphens only. Max 30 characters.</p>
+      </div>
+      <div class="form-group">
+        <label>Personality Style</label>
+        <select id="persona-personality">
+          <option value="pirate">Pirate (default) - nautical references, addresses you as Captain</option>
+          <option value="professional">Professional - formal, precise, no pirate references</option>
+          <option value="friendly">Friendly - casual and warm, no pirate references</option>
+        </select>
+        <p class="form-note">Restart the agent after changing personality for it to take effect.</p>
+      </div>
+      <div class="flex-gap">
+        <button class="btn btn-primary btn-sm" onclick="savePersona(this)">Save</button>
+        <span class="save-confirm" id="confirm-persona">&#10003; Saved</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Section 7: Download preferences -->
   <div class="settings-section">
     <div class="settings-section-header" onclick="toggleSection(this)">
       <span class="settings-section-title">⚙️ Download Preferences</span>
@@ -235,7 +263,7 @@
     </div>
   </div>
 
-  <!-- Section 7: ClamAV -->
+  <!-- Section 8: ClamAV -->
   <div class="settings-section">
     <div class="settings-section-header" onclick="toggleSection(this)">
       <span class="settings-section-title">🛡️ Malware Scanning (ClamAV)</span>
@@ -260,7 +288,7 @@
     </div>
   </div>
 
-  <!-- Section 8: Telegram -->
+  <!-- Section 9: Telegram -->
   <div class="settings-section">
     <div class="settings-section-header" onclick="toggleSection(this)">
       <span class="settings-section-title">✈️ Telegram</span>
@@ -304,7 +332,7 @@
     </div>
   </div>
 
-<!-- Section 9: RTMP Cinema -->
+<!-- Section 10: RTMP Cinema -->
   <div class="settings-section">
     <div class="settings-section-header" onclick="toggleSection(this)">
       <span class="settings-section-title">&#127909; RTMP Cinema</span>
@@ -382,7 +410,7 @@
   </div>
 
 
-  <!-- Section 10: Web UI -->
+  <!-- Section 11: Web UI -->
   <div class="settings-section">
     <div class="settings-section-header" onclick="toggleSection(this)">
       <span class="settings-section-title">🌐 Web UI</span>
@@ -406,7 +434,7 @@
     </div>
   </div>
 
-  <!-- Section 11: System & Maintenance -->
+  <!-- Section 12: System & Maintenance -->
   <div class="settings-section">
     <div class="settings-section-header" onclick="toggleSection(this)">
       <span class="settings-section-title">🔧 System &amp; Maintenance</span>
@@ -442,7 +470,7 @@
     </div>
   </div>
 
-  <!-- Section 12: File Management -->
+  <!-- Section 13: File Management -->
   <div class="settings-section">
     <div class="settings-section-header" onclick="toggleSection(this)">
       <span class="settings-section-title">🗑️ File Management</span>
@@ -570,7 +598,7 @@
   </div>
 
 
-  <!-- Section 13: Remote Access (Tailscale) -->
+  <!-- Section 14: Remote Access (Tailscale) -->
   <div class="settings-section">
     <div class="settings-section-header" onclick="toggleSection(this)">
       <span class="settings-section-title">🔒 Remote Access (Tailscale)</span>
@@ -1097,7 +1125,40 @@
       });
   }
 
-  loadExtraSources();
+loadExtraSources();
+
+  // Pre-select current personality in dropdown
+  fetch('/api/settings/persona')
+    .then(r => r.json())
+    .then(data => {
+      if (data.personality) {
+        document.getElementById('persona-personality').value = data.personality;
+      }
+    });
+
+  function savePersona(btn) {
+    const name = document.getElementById('persona-name').value.trim();
+    const personality = document.getElementById('persona-personality').value;
+    btn.disabled = true;
+    fetch('/api/settings/persona', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({name: name, personality: personality})
+    })
+    .then(r => r.json())
+    .then(data => {
+      btn.disabled = false;
+      if (data.ok) {
+        showConfirm('confirm-persona');
+      } else {
+        alert('Save failed: ' + (data.error || 'unknown error'));
+      }
+    })
+    .catch(err => {
+      btn.disabled = false;
+      alert('Save failed: ' + err);
+    });
+  }
 </script>
 
 

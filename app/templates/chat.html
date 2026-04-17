@@ -4,11 +4,12 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-title" content="HookReel">
+  <meta name="apple-mobile-web-app-title" content="{{ agent_name }}">
   <meta name="theme-color" content="#1a1a2e">
   <link rel="manifest" href="/static/manifest.json">
   <link rel="stylesheet" href="/static/style.css">
-  <title>Chat — HookReel</title>
+  <title>Chat — {{ agent_name }}</title>
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
 </head>
 <body>
 
@@ -17,7 +18,7 @@
 
   <!-- Header with nav link -->
   <div class="chat-header">
-    <span>⚓ Hook<span style="color:var(--text-primary)">Reel</span> — Chat</span>
+    <span>&#9875; Hook<span style="color:var(--text-primary)">Reel</span> — {{ agent_name }}</span>
     <div style="margin-left:auto;display:flex;gap:12px;align-items:center;">
       <a href="/dashboard" style="color:var(--text-secondary);font-size:0.85rem;">Dashboard</a>
       <a href="/library"   style="color:var(--text-secondary);font-size:0.85rem;">Library</a>
@@ -29,7 +30,7 @@
   <div class="chat-messages" id="chat-messages">
     <!-- Welcome bubble -->
     <div class="chat-bubble agent">
-      <div class="bubble-label">⚓ HookReel</div>
+      <div class="bubble-label">&#9875; {{ agent_name }}</div>
       Ahoy! Tell me what ye want to watch and I'll hunt it down. Try: <em>Find me Interstellar</em>
     </div>
   </div>
@@ -39,7 +40,7 @@
     <textarea
       class="chat-input"
       id="chat-input"
-      placeholder="Ask HookReel anything..."
+      placeholder="Ask {{ agent_name }} anything..."
       rows="1"
       autocomplete="off"
       autocorrect="off"
@@ -66,7 +67,7 @@
     if (role === 'agent') {
       var label = document.createElement('div');
       label.className = 'bubble-label';
-      label.textContent = '⚓ HookReel';
+      label.textContent = '&#9875; {{ agent_name }}';
       bubble.appendChild(label);
     }
     var content = document.createElement('span');

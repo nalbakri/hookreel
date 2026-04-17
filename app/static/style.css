@@ -291,6 +291,14 @@ label {
   color: var(--text-primary);
 }
 
+.nav-agent-name {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-left: 8px;
+  font-weight: 400;
+  vertical-align: middle;
+}
+
 .nav-links {
   display: none;
   list-style: none;

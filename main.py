@@ -70,7 +70,7 @@ def run_cycle():
     )
 
 
-def do_agent_restart(conversation_manager_ref: list) -> None:
+def do_agent_restart(conversation_manager_ref: list, bot=None) -> None:
     """
     Re-initialise the ConversationManager in response to a restart signal.
 
@@ -95,6 +95,8 @@ def do_agent_restart(conversation_manager_ref: list) -> None:
         new_manager = ConversationManager()
         conversation_manager_ref[0] = new_manager
         set_conversation_manager(new_manager)
+        if bot is not None:
+            bot.update_conversation_manager(new_manager)
         logger.info("[HookReel] Agent restart complete — all sessions reset")
     except Exception as error:
         logger.error("[HookReel] Agent restart failed: %s", error)
@@ -219,4 +221,4 @@ if __name__ == "__main__":
 
             # Check for restart signal from the web UI settings page
             if restart_event.is_set():
-                do_agent_restart(conversation_manager_ref)
+                do_agent_restart(conversation_manager_ref, bot)

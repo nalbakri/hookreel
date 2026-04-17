@@ -105,3 +105,25 @@ Access HookReel at http://[tailscale-ip]:8765
 ## Troubleshooting
 
 See docs/TROUBLESHOOTING.md
+
+## Raspberry Pi installation
+
+HookReel supports ARM64 (Raspberry Pi 4 and 5 with 64-bit OS, Radxa boards,
+and other ARM64 SBCs).
+
+Note: ARM64 builds are provided but not yet tested on real hardware.
+Community feedback welcome.
+
+Requirements:
+- Raspberry Pi 4 or 5 with 4GB+ RAM (8GB recommended)
+- 64-bit OS (Raspberry Pi OS 64-bit, Ubuntu 22.04 ARM, Armbian)
+- Docker Engine 24+ and Compose v2+
+
+Installation is identical to x86:
+    git clone https://github.com/nalbakri/hookreel
+    cd hookreel
+    python3 setup.py
+    docker compose up -d
+
+Note: ClamAV may take longer to start on Raspberry Pi (10-15 minutes on
+first run while downloading virus definitions). This is normal.

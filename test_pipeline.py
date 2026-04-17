@@ -321,9 +321,8 @@ def test_18_single_turn_no_tools():
     WARNING: Makes a real API call to DeepSeek.
     """
     print("\n--- Test 18: Single turn conversation (no tools) ---")
-    confirm = input("  This makes a real API call. Run? [y/N]: ").strip().lower()
-    if confirm != "y":
-        print("SKIPPED")
+    if os.environ.get("HOOKREEL_RUN_API_TESTS", "").lower() != "y":
+        print("SKIPPED -- set HOOKREEL_RUN_API_TESTS=y to run")
         return None
     try:
         from app.agent import HookReelAgent
@@ -332,12 +331,11 @@ def test_18_single_turn_no_tools():
         assert isinstance(response, str), "Response is not a string"
         assert len(response) > 0, "Response is empty"
         print(f"  Response: {response[:200]}")
-        print("PASS — received non-empty response")
+        print("PASS -- received non-empty response")
         return True
     except Exception as error:
-        print(f"FAIL — {error}")
+        print(f"FAIL -- {error}")
         return False
-
 
 def test_19_tool_calling_conversation():
     """
@@ -345,9 +343,8 @@ def test_19_tool_calling_conversation():
     WARNING: Makes a real API call to DeepSeek.
     """
     print("\n--- Test 19: Tool-calling conversation ---")
-    confirm = input("  This makes a real API call. Run? [y/N]: ").strip().lower()
-    if confirm != "y":
-        print("SKIPPED")
+    if os.environ.get("HOOKREEL_RUN_API_TESTS", "").lower() != "y":
+        print("SKIPPED -- set HOOKREEL_RUN_API_TESTS=y to run")
         return None
     try:
         from app.agent import HookReelAgent
@@ -358,10 +355,10 @@ def test_19_tool_calling_conversation():
         history_roles = [m["role"] for m in agent.history]
         assert "tool" in history_roles, "No tool call was made"
         print(f"  Response: {response[:200]}")
-        print("PASS — tool was called and response received")
+        print("PASS -- tool was called and response received")
         return True
     except Exception as error:
-        print(f"FAIL — {error}")
+        print(f"FAIL -- {error}")
         return False
 
 
@@ -370,10 +367,8 @@ def test_20_full_movie_request():
     Full AI movie request simulation. WARNING: triggers a real download.
     """
     print("\n--- Test 20: Full AI movie request simulation ---")
-    print("  WARNING: This will trigger a real download.")
-    confirm = input("  Run? [y/N]: ").strip().lower()
-    if confirm != "y":
-        print("SKIPPED")
+    if os.environ.get("HOOKREEL_RUN_API_TESTS", "").lower() != "y":
+        print("SKIPPED -- set HOOKREEL_RUN_API_TESTS=y to run")
         return None
     try:
         from app.conversation import ConversationManager
@@ -386,10 +381,10 @@ def test_20_full_movie_request():
         print(f"  Turn 2: {response_2[:300]}")
         assert isinstance(response_2, str) and len(response_2) > 0
 
-        print("PASS — multi-turn AI movie request completed")
+        print("PASS -- multi-turn AI movie request completed")
         return True
     except Exception as error:
-        print(f"FAIL — {error}")
+        print(f"FAIL -- {error}")
         return False
 
 

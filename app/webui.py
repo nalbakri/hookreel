@@ -35,6 +35,7 @@ import app.config as config
 import app.database as database
 from app.logger import get_logger
 from app.audit import log_audit
+from app.persona import get_name
 logger = get_logger(__name__)
 
 # ── FastAPI app ────────────────────────────────────────────────────────────────
@@ -432,7 +433,7 @@ async def login_page(request: Request):
     """Render the login page."""
     if _is_authenticated(request):
         return RedirectResponse(url="/dashboard", status_code=302)
-    return templates.TemplateResponse("login.html", {"request": request, "error": None})
+    return templates.TemplateResponse(request=request, name="login.html", context={"request": request, "error": None})
 
 
 @app_fastapi.post("/login", response_class=HTMLResponse)
@@ -454,8 +455,9 @@ async def login_post(request: Request, password: str = Form(...)):
         logger.warning("[HookReel] WebUI: failed login attempt from %s", request.client.host)
         log_audit("login_failed", {"ip": request.client.host}, "webui")
         return templates.TemplateResponse(
-            "login.html",
-            {"request": request, "error": "Incorrect password. Try again."},
+            request=request,
+            name="login.html",
+            context= {"request": request, "error": "Incorrect password. Try again."},
             status_code=401,
         )
 
@@ -490,13 +492,14 @@ async def dashboard(request: Request):
     all_movies = database.get_all_movies()
     downloading = database.get_movies_by_status("downloading")
 
-    return templates.TemplateResponse("dashboard.html", {
+    return templates.TemplateResponse(request=request, name="dashboard.html", context={
         "request": request,
         "active_page": "dashboard",
         "active_downloads": active_downloads,
         "recent_complete": recent_complete,
         "library_count": len(all_movies),
         "downloading_count": len(downloading),
+        "version": config.VERSION, "version_name": config.VERSION_NAME,
     })
 
 
@@ -515,11 +518,12 @@ async def library(request: Request, search: str = ""):
         search_lower = search.lower()
         movies = [m for m in movies if search_lower in m["title"].lower()]
 
-    return templates.TemplateResponse("library.html", {
+    return templates.TemplateResponse(request=request, name="library.html", context={
         "request": request,
         "active_page": "library",
         "movies": movies,
         "search": search,
+        "version": config.VERSION, "version_name": config.VERSION_NAME,
     })
 
 
@@ -528,9 +532,11 @@ async def chat(request: Request):
     """Render the chat interface page."""
     if not _is_authenticated(request):
         return _login_redirect()
-    return templates.TemplateResponse("chat.html", {
+    return templates.TemplateResponse(request=request, name="chat.html", context={
         "request": request,
         "active_page": "chat",
+        "version": config.VERSION, "version_name": config.VERSION_NAME,
+        "agent_name": get_name(),
     })
 
 
@@ -540,11 +546,12 @@ async def settings(request: Request):
     if not _is_authenticated(request):
         return _login_redirect()
     env = read_env()
-    return templates.TemplateResponse("settings.html", {
+    return templates.TemplateResponse(request=request, name="settings.html", context={
         "request": request,
         "active_page": "settings",
         "settings": env,
         "delete_enabled": config.DELETE_ENABLED,
+        "version": config.VERSION, "version_name": config.VERSION_NAME,
     })
 
 
@@ -553,9 +560,10 @@ async def indexers(request: Request):
     """Render the Prowlarr indexer management page."""
     if not _is_authenticated(request):
         return _login_redirect()
-    return templates.TemplateResponse("indexers.html", {
+    return templates.TemplateResponse(request=request, name="indexers.html", context={
         "request": request,
         "active_page": "indexers",
+        "version": config.VERSION, "version_name": config.VERSION_NAME,
     })
 
 
@@ -564,9 +572,10 @@ async def downloader(request: Request):
     """Render the qBittorrent downloader management page."""
     if not _is_authenticated(request):
         return _login_redirect()
-    return templates.TemplateResponse("downloader.html", {
+    return templates.TemplateResponse(request=request, name="downloader.html", context={
         "request": request,
         "active_page": "downloader",
+        "version": config.VERSION, "version_name": config.VERSION_NAME,
     })
 
 
@@ -662,13 +671,14 @@ async def watch_page(request: Request, stream: str = ""):
     from app.hls_streamer import hls_streamer
     active_streams = hls_streamer.get_active_streams()
 
-    return templates.TemplateResponse("watch.html", {
+    return templates.TemplateResponse(request=request, name="watch.html", context={
         "request": request,
         "active_page": "watch",
         "history": history,
         "active_streams": active_streams,
         "jellyfin_enabled": config.JELLYFIN_ENABLED,
         "autoplay_stream": stream,
+        "version": config.VERSION, "version_name": config.VERSION_NAME,
     })
 
 
@@ -1000,6 +1010,39 @@ async def api_settings_test(request: Request):
     except Exception as exc:
         return JSONResponse({"success": False, "message": str(exc)})
 
+# ── API routes — Persona ──────────────────────────────────────────────────────
+@app_fastapi.get("/api/settings/persona")
+async def api_get_persona(request: Request):
+    """Return current persona name and personality."""
+    if not _is_authenticated(request):
+        return JSONResponse({"error": "Not authenticated"}, status_code=401)
+    from app.persona import load_persona
+    persona = load_persona()
+    return JSONResponse({"name": persona.get("name", "MrSmee"), "personality": persona.get("personality", "pirate")})
+
+@app_fastapi.post("/api/settings/persona")
+async def api_save_persona(request: Request):
+    """Save agent name and personality style."""
+    if not _is_authenticated(request):
+        return JSONResponse({"error": "Not authenticated"}, status_code=401)
+    try:
+        body = await request.json()
+        name = body.get("name", "").strip()
+        personality = body.get("personality", "").strip()
+        from app.persona import update_name, update_personality
+        errors = []
+        if name:
+            if not update_name(name):
+                errors.append("Invalid name")
+        if personality:
+            if not update_personality(personality):
+                errors.append("Invalid personality")
+        if errors:
+            return JSONResponse({"ok": False, "error": ", ".join(errors)})
+        return JSONResponse({"ok": True})
+    except Exception as exc:
+        return JSONResponse({"ok": False, "error": str(exc)})
+
 
 # ── API routes — Tailscale ─────────────────────────────────────────────────────
 
@@ -1220,8 +1263,9 @@ async def tv_library(request: Request):
             "complete_count": complete,
         })
     return templates.TemplateResponse(
-        "tv.html",
-        {"request": request, "active_page": "tv", "shows": shows_with_counts}
+        request=request,
+        name="tv.html",
+        context={"request": request, "active_page": "tv", "shows": shows_with_counts, "version": config.VERSION, "version_name": config.VERSION_NAME}
     )
 
 

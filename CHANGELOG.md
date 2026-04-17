@@ -2,6 +2,28 @@
 
 All notable changes to HookReel are documented here.
 
+## v1.0.1 Hook
+
+### UI improvements
+- Version and release name now shown in web UI nav bar (e.g. v1.0.1 Hook)
+- Agent name shown in chat header
+- Personality selector added to settings page
+- Agent name field added to settings page
+- Favicon added (anchor icon)
+- chat.html hardcoded strings replaced with dynamic agent name
+
+### Bug fixes
+- TemplateResponse deprecation warning fixed (starlette 0.38.6)
+- Tests 18-20 now pass without -s flag (HOOKREEL_RUN_API_TESTS=y to run)
+- Torrent hash lookup normalised to lowercase for reliable completion detection
+- Telegram bot ConversationManager reference updated correctly on agent restart
+
+### Developer experience
+- docker-compose.dev.yml added for live app/ volume mount during development
+- CONTRIBUTING.md added with full dev setup and workflow instructions
+- GitHub Actions workflow added for multi-arch Docker builds (linux/amd64, linux/arm64)
+- ARM64 builds provided for Raspberry Pi 4/5 and other ARM64 SBCs
+
 ## v1.0 Hook -- 2026
 
 Initial public release.
