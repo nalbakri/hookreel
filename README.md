@@ -3,7 +3,7 @@
 > Replace your entire *arr stack with one AI-powered media agent.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.0%20Hook-orange.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-1.0.1%20Hook-orange.svg)](CHANGELOG.md)
 
 HookReel is a self-hosted, AI-powered media automation agent. Instead of
 managing Radarr, Sonarr, and Jellyseerr separately, you just ask for what
@@ -126,6 +126,7 @@ See docs/CONFIGURATION.md for the full reference.
 | Version | Name | Notes |
 |---|---|---|
 | 1.0 | Hook | Initial release |
+| 1.0.1 | Hook | UI improvements, bug fixes, ARM64 support |
 
 Version names follow Peter and Wendy characters:
 v1.0 Hook, v1.1 Alf, v1.2 Bill, v1.3 Black Murphy, v1.4 Cecco,
