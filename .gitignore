@@ -5,6 +5,7 @@
 # CRITICAL: Never commit credentials
 config/.env
 config/.env.bak
+config/persona.json
 
 # Backup files
 *.bak

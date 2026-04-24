@@ -37,6 +37,15 @@ COPY main.py .
 COPY test_pipeline.py .
 COPY test_phase7b.py .
 COPY test_patch1.py .
+COPY test_patch2.py .
+COPY test_phase5.py .
+COPY test_phase6.py .
+COPY test_phase65.py .
+COPY test_phase66.py .
+COPY test_phase8.py .
+COPY import_library.py .
+COPY setup.py .
+COPY uninstall.py .
 COPY docker-compose.dev.yml .
 COPY CONTRIBUTING.md .
 COPY .github/ ./.github/

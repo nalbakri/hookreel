@@ -13,7 +13,7 @@ from app.logger import get_logger
 
 logger = get_logger(__name__)
 
-_PERSONA_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "persona.json")
+_PERSONA_PATH = "/config/persona.json"
 
 _DEFAULT_PERSONA = {
     "name": "MrSmee",
@@ -41,8 +41,14 @@ def load_persona() -> dict:
                 data[key] = value
         return data
     except FileNotFoundError:
-        logger.warning("[HookReel] persona.json not found -- using defaults")
-        return dict(_DEFAULT_PERSONA)
+        logger.warning("[HookReel] persona.json not found -- writing defaults to /config/persona.json")
+        default = dict(_DEFAULT_PERSONA)
+        try:
+            with open(_PERSONA_PATH, "w") as fh:
+                json.dump(default, fh, indent=4)
+        except Exception as write_exc:
+            logger.error("[HookReel] Could not write default persona.json: %s", write_exc)
+        return default
     except Exception as exc:
         logger.error("[HookReel] load_persona error: %s", exc)
         return dict(_DEFAULT_PERSONA)

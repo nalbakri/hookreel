@@ -35,7 +35,7 @@ import app.config as config
 import app.database as database
 from app.logger import get_logger
 from app.audit import log_audit
-from app.persona import get_name
+from app.persona import get_name, get_greeting
 logger = get_logger(__name__)
 
 # ── FastAPI app ────────────────────────────────────────────────────────────────
@@ -537,6 +537,7 @@ async def chat(request: Request):
         "active_page": "chat",
         "version": config.VERSION, "version_name": config.VERSION_NAME,
         "agent_name": get_name(),
+        "greeting": get_greeting(),
     })
 
 

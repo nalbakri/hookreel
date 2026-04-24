@@ -2,6 +2,14 @@
 
 All notable changes to HookReel are documented here.
 
+## v1.0.2 Hook
+### Bug fixes
+- Fixed critical bug where completed downloads were never post-processed (files stayed in Downloads indefinitely)
+- Fixed RTMP stream credentials being lost after container restart (credentials now read from .env at call time)
+- Fixed agent name and personality reverting to defaults after image rebuild (persona.json moved to /config/ volume)
+- Fixed chat welcome bubble showing hardcoded greeting instead of current agent name and personality
+- Fixed rare bug that might affect users who scan existing media libraries (import_library.py was missing from Docker image)
+
 ## v1.0.1 Hook
 
 ### UI improvements

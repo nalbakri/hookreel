@@ -175,7 +175,7 @@ if __name__ == "__main__":
 
         while True:
             try:
-                check_completed_downloads()
+                run_post_processing()
             except Exception as poll_error:
                 logger.error("[HookReel] Polling loop error: %s", poll_error)
 

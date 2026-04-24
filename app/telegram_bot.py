@@ -527,7 +527,8 @@ class HookReelBot:
         Called by the post-processor after a file is moved
         and verified. Runs in the bot's async context.
         """
-        if not config.TELEGRAM_RTMP_URL or not config.TELEGRAM_RTMP_KEY:
+        rtmp_url, rtmp_key = _read_rtmp_credentials()
+        if not rtmp_url or not rtmp_key:
             # RTMP not configured — send plain notification only.
             text = (
                 f"Download complete: {title}\n\n"
@@ -590,6 +591,22 @@ class HookReelBot:
         asyncio.set_event_loop(loop)
         self.application.run_polling(stop_signals=None)
 
+def _read_rtmp_credentials():
+    """Read RTMP credentials from /config/.env at call time."""
+    env = {}
+    try:
+        with open("/config/.env") as f:
+            for line in f:
+                line = line.strip()
+                if line.startswith("TELEGRAM_RTMP_URL="):
+                    env["url"] = line.split("=", 1)[1]
+                elif line.startswith("TELEGRAM_RTMP_KEY="):
+                    env["key"] = line.split("=", 1)[1]
+    except Exception:
+        pass
+    url = env.get("url", os.environ.get("TELEGRAM_RTMP_URL", ""))
+    key = env.get("key", os.environ.get("TELEGRAM_RTMP_KEY", ""))
+    return url, key
 
 # -------------------------------------------------------
 # Module-level helpers
@@ -647,8 +664,7 @@ async def _do_stream(query, file_path: str, title: str):
     Start a stream from a callback query context.
     Sends follow-up messages based on result.
     """
-    rtmp_url = config.TELEGRAM_RTMP_URL
-    rtmp_key = config.TELEGRAM_RTMP_KEY
+    rtmp_url, rtmp_key = _read_rtmp_credentials()
 
     if not rtmp_url or not rtmp_key:
         await query.message.reply_text(SETUP_STREAM_INSTRUCTIONS)
