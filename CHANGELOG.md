@@ -2,6 +2,23 @@
 
 All notable changes to HookReel are documented here.
 
+## v1.0.3 Hook
+### Bug fixes
+- Fixed v1.0.2 regression where polling loop called undefined function run_post_processing() instead of run_cycle()
+
+## v1.0.3 Hook
+### Bug fixes
+- Fixed v1.0.2 regression where polling loop called undefined function instead of run_cycle()
+- Added queuedUP to complete states so queued-for-seeding torrents are correctly detected as finished
+- Added startup recovery for downloads that completed but were never post-processed due to the v1.0.1/v1.0.2 bug
+- Disabled unreliable title-based file matching in postprocessor to prevent wrong files being moved
+
+### Known limitation
+- Movies downloaded without a torrent hash (due to a pre-existing hash lookup reliability issue)
+  cannot be auto-recovered. Affected movies will remain as 'failed' and must be re-requested.
+  The postprocessor will log a clear warning. A proper fix with interactive file confirmation
+  via Telegram is planned for v1.1 Alf.
+
 ## v1.0.2 Hook
 ### Bug fixes
 - Fixed critical bug where completed downloads were never post-processed (files stayed in Downloads indefinitely)

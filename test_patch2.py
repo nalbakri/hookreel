@@ -106,6 +106,39 @@ def test_102_chat_route_includes_greeting():
     print("Test 102 PASS -- chat route passes greeting and chat.html uses it")
     return True
 
+def test_103_queuedup_in_complete_states():
+    """queuedUP must be in complete_states in postprocessor.py."""
+    path = os.path.join(os.path.dirname(__file__), "app", "postprocessor.py")
+    with open(path) as f:
+        source = f.read()
+    assert '"queuedUP"' in source or "'queuedUP'" in source, \
+        "queuedUP missing from complete_states"
+    print("Test 103 PASS -- queuedUP present in complete_states")
+    return True
+
+
+def test_104_title_fallback_disabled():
+    """Title-based fallback in _resolve_file_path must be disabled."""
+    path = os.path.join(os.path.dirname(__file__), "app", "postprocessor.py")
+    with open(path) as f:
+        source = f.read()
+    assert "Disabled in v1.0.3" in source, \
+        "Title fallback not marked as disabled in postprocessor.py"
+    print("Test 104 PASS -- title-based fallback disabled in _resolve_file_path")
+    return True
+
+
+def test_105_recover_stuck_downloads_exists():
+    """recover_stuck_downloads() must exist in main.py."""
+    path = os.path.join(os.path.dirname(__file__), "main.py")
+    with open(path) as f:
+        source = f.read()
+    assert "def recover_stuck_downloads" in source, \
+        "recover_stuck_downloads not found in main.py"
+    assert "recover_stuck_downloads()" in source, \
+        "recover_stuck_downloads() not called at startup"
+    print("Test 105 PASS -- recover_stuck_downloads exists and is called at startup")
+    return True
 
 if __name__ == "__main__":
     tests = [
@@ -115,6 +148,9 @@ if __name__ == "__main__":
         test_100_persona_loads_from_config_volume,
         test_101_persona_writes_defaults_when_missing,
         test_102_chat_route_includes_greeting,
+        test_103_queuedup_in_complete_states,
+        test_104_title_fallback_disabled,
+        test_105_recover_stuck_downloads_exists,
     ]
     passed = 0
     failed = 0

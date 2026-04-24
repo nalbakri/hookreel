@@ -12,11 +12,13 @@ the ConversationManager and reloads in-memory config without
 restarting the Docker container.
 """
 
+import os
+import re
 import time
 import sys
 import threading
 
-from app import config, database
+from app import config, database, qbittorrent
 from app.logger import get_logger
 from app.postprocessor import check_completed_downloads, process_movie
 from app.tv_postprocessor import check_completed_tv_downloads, process_episode
@@ -69,6 +71,103 @@ def run_cycle():
         total_complete,
     )
 
+def recover_stuck_downloads():
+    """
+    One-time startup recovery for downloads that completed in qBittorrent
+    but were never post-processed due to the v1.0.1 polling loop bug.
+
+    For movies: finds failed entries, checks qBittorrent for 100% progress,
+    resets to 'downloading' so run_cycle() picks them up.
+
+    For TV episodes: finds failed entries with no file_path, scans the
+    Downloads folder for matching files by show title and S##E## pattern,
+    sets file_path and resets to 'downloading' so run_cycle() picks them up.
+
+    Safe: only recovers entries confirmed complete by qBittorrent or with
+    a matching physical file in Downloads. Partial or missing downloads
+    are left as 'failed'.
+    """
+    logger.info("[HookReel] Running startup recovery for stuck downloads")
+    recovered_movies = 0
+    recovered_episodes = 0
+
+    # --- Movie recovery ---
+    failed_movies = database.get_movies_by_status("failed")
+    torrent_list = qbittorrent.get_torrent_list()
+    torrent_by_hash = {}
+    for t in torrent_list:
+        h = (t.get("hash") or "").lower().strip()
+        if h:
+            torrent_by_hash[h] = t
+
+    for movie in failed_movies:
+        torrent_hash = (movie.get("torrent_hash") or "").lower().strip()
+        if not torrent_hash:
+            continue
+        torrent = torrent_by_hash.get(torrent_hash)
+        if not torrent:
+            continue
+        progress = torrent.get("progress", 0)
+        if progress < 1.0:
+            logger.info(
+                "[HookReel] Recovery: skipping '%s' -- progress %.0f%%",
+                movie["title"], progress * 100
+            )
+            continue
+        database.update_movie_status(movie["id"], "downloading")
+        logger.info(
+            "[HookReel] Recovery: reset movie '%s' (id=%d) to downloading",
+            movie["title"], movie["id"]
+        )
+        recovered_movies += 1
+
+    # --- TV episode recovery ---
+    failed_episodes = database.get_episodes_by_status("failed")
+    downloads_path = config.DOWNLOADS_PATH
+    try:
+        downloads_files = os.listdir(downloads_path)
+    except Exception:
+        downloads_files = []
+
+    for episode in failed_episodes:
+        if episode.get("file_path"):
+            continue
+        show = database.get_show(episode["show_id"])
+        if not show:
+            continue
+        season = episode.get("season") or 0
+        ep_num = episode.get("episode") or 0
+        ep_pattern = re.compile(
+            r"[Ss]%02d[Ee]%02d" % (season, ep_num)
+        )
+        show_title = show.get("title", "").lower()
+        show_words = re.sub(r"[^a-z0-9]", ".", show_title)
+        matched_file = None
+        for fname in downloads_files:
+            fname_lower = fname.lower()
+            if not ep_pattern.search(fname):
+                continue
+            if show_title.replace(" ", "") in fname_lower.replace(".", "").replace(" ", "") or \
+               show_words[:10] in fname_lower:
+                candidate = os.path.join(downloads_path, fname)
+                if os.path.isfile(candidate):
+                    matched_file = candidate
+                    break
+        if not matched_file:
+            continue
+        database.update_episode_status(
+            episode["id"], "downloading", file_path=matched_file
+        )
+        logger.info(
+            "[HookReel] Recovery: reset episode id=%d S%02dE%02d to downloading, path=%s",
+            episode["id"], season, ep_num, matched_file
+        )
+        recovered_episodes += 1
+
+    logger.info(
+        "[HookReel] Recovery complete: %d movie(s), %d episode(s) re-queued",
+        recovered_movies, recovered_episodes
+    )
 
 def do_agent_restart(conversation_manager_ref: list, bot=None) -> None:
     """
@@ -116,6 +215,12 @@ def main():
     if cleaned:
         logger.info("[HookReel] Cleaned up %d stuck download(s) at startup", cleaned)
 
+    # Recover downloads that completed but were never post-processed
+    try:
+        recover_stuck_downloads()
+    except Exception as recovery_error:
+        logger.error("[HookReel] Recovery error: %s", recovery_error)
+
     while True:
         try:
             run_cycle()
@@ -127,7 +232,16 @@ def main():
 if __name__ == "__main__":
     from app.database import migrate
     migrate()
-
+    database.initialise()
+    database.initialise_pairing_tables()
+    cleaned = database.cleanup_stuck_downloads(hours=24)
+    if cleaned:
+        logger.info("[HookReel] Cleaned up %d stuck download(s) at startup", cleaned)
+    try:
+        recover_stuck_downloads()
+    except Exception as recovery_error:
+        logger.error("[HookReel] Recovery error: %s", recovery_error)
+    
     # Create initial ConversationManager
     conversation_manager = ConversationManager()
     logger.info("[HookReel] ConversationManager initialised and ready.")
@@ -175,7 +289,7 @@ if __name__ == "__main__":
 
         while True:
             try:
-                run_post_processing()
+                run_cycle()
             except Exception as poll_error:
                 logger.error("[HookReel] Polling loop error: %s", poll_error)
 

@@ -54,7 +54,7 @@ def check_completed_downloads() -> list:
 
         progress = torrent_info.get("progress", 0)
         state = torrent_info.get("state", "")
-        complete_states = {"uploading", "stalledUP", "pausedUP", "forcedUP"}
+        complete_states = {"uploading", "stalledUP", "pausedUP", "forcedUP", "queuedUP"}
 
         if progress >= 1.0 and state in complete_states:
             movie["_content_path"] = torrent_info.get("content_path", "")
@@ -322,19 +322,15 @@ def _resolve_file_path(movie: dict) -> str:
         if video_file:
             return video_file
 
-    # Fallback: scan Downloads folder
-    downloads = config.DOWNLOADS_PATH
-    title_lower = movie["title"].lower()
-
-    if os.path.isdir(downloads):
-        for filename in os.listdir(downloads):
-            if title_lower.replace(" ", ".") in filename.lower() or \
-               title_lower in filename.lower():
-                candidate = os.path.join(downloads, filename)
-                if os.path.isfile(candidate):
-                    return candidate
-
-    logger.warning("[HookReel] Could not resolve file path for movie id=%d", movie["id"])
+    # Fallback: scan Downloads folder by title name
+    # WARNING: this is unreliable and can match wrong files.
+    # Disabled in v1.0.3 -- re-enable with proper confirmation flow in v1.1.
+    # If content_path is missing, log and return None so the user can re-request.
+    logger.warning(
+        "[HookReel] Could not resolve file path for '%s' (id=%d) -- "
+        "no content_path from qBittorrent. Re-request the movie to retry.",
+        movie["title"], movie["id"]
+    )
     return None
 
 
