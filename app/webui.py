@@ -1536,3 +1536,27 @@ async def api_library_sources_add(request: Request):
         return JSONResponse(
             {"success": False, "error": str(exc)}, status_code=500
         )
+
+# ---------------------------------------------------------------------------
+# Jellyfin webhook endpoint (v1.1)
+# ---------------------------------------------------------------------------
+
+@app_fastapi.post("/webhooks/jellyfin")
+async def jellyfin_webhook(request: Request):
+    """
+    Receive Jellyfin webhook payloads and update watch history.
+    Optional HMAC verification if JELLYFIN_WEBHOOK_SECRET is set.
+    """
+    from app.webhook import handle_jellyfin_event, verify_webhook_secret
+    try:
+        payload_bytes = await request.body()
+        signature = request.headers.get("X-Jellyfin-Signature", "")
+        if not verify_webhook_secret(payload_bytes, signature):
+            logger.warning("[HookReel] Jellyfin webhook: invalid signature")
+            return JSONResponse({"error": "invalid signature"}, status_code=401)
+        payload = await request.json()
+        result = handle_jellyfin_event(payload)
+        return JSONResponse(result)
+    except Exception as exc:
+        logger.error("[HookReel] jellyfin_webhook error: %s", exc)
+        return JSONResponse({"error": str(exc)}, status_code=500)

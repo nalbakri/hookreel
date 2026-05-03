@@ -42,7 +42,7 @@ def search_tv_releases(
         "[HookReel] TV Prowlarr search query=%s category=5000", search_query
     )
     try:
-        releases = search_releases(search_query, categories=[5000])
+        releases = search_releases(search_query, category=5000)
         logger.info(
             "[HookReel] TV Prowlarr returned %d results", len(releases)
         )
@@ -230,11 +230,10 @@ def request_show(
 
     # --- Step 4: Resolve download URL ---
     if download_url:
-        validation_error = _validate_download_url(download_url)
-        if validation_error:
+        if not _validate_download_url(download_url):
             return {
                 "success": False,
-                "message": validation_error,
+                "message": "Invalid download URL format.",
                 "show_id": show_id,
                 "episode_ids": episode_ids
             }
@@ -274,7 +273,7 @@ def request_show(
     logger.info(
         "[HookReel] Adding to qBittorrent: %s", chosen_title
     )
-    torrent_hash = add_torrent(torrent_url, chosen_title)
+    torrent_hash = add_torrent(torrent_url, save_path=config.DOWNLOADS_PATH)
 
     # --- Step 7: Update episode statuses ---
     new_status = "downloading" if torrent_hash else "searching"

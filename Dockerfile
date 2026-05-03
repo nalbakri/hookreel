@@ -43,6 +43,7 @@ COPY test_phase6.py .
 COPY test_phase65.py .
 COPY test_phase66.py .
 COPY test_phase8.py .
+COPY test_v1_1.py .
 COPY import_library.py .
 COPY setup.py .
 COPY uninstall.py .

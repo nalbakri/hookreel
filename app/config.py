@@ -65,8 +65,8 @@ RTMP_SCALE = get("RTMP_SCALE", "1280:-2")
 SESSION_EXPIRY_HOURS    = int(get("SESSION_EXPIRY_HOURS", "24"))
 RATE_LIMIT_ENABLED      = get("RATE_LIMIT_ENABLED", "true").lower() == "true"
 # --- Phase 8 ---
-VERSION = "1.0.3"
-VERSION_NAME = "Hook"
+VERSION = "1.1.0"
+VERSION_NAME = "Alf"
 # Extra media sources (up to 5, set during setup wizard)
 EXTRA_MEDIA_1 = get("EXTRA_MEDIA_1", "")
 EXTRA_MEDIA_1_LABEL = get("EXTRA_MEDIA_1_LABEL", "Extra Source 1")
@@ -80,3 +80,7 @@ EXTRA_MEDIA_5 = get("EXTRA_MEDIA_5", "")
 EXTRA_MEDIA_5_LABEL = get("EXTRA_MEDIA_5_LABEL", "Extra Source 5")
 # Telegram Cinema stream group link
 TELEGRAM_CINEMA_LINK = get("TELEGRAM_CINEMA_LINK", "")
+# --- v1.1 Alf ---
+JELLYFIN_WEBHOOK_SECRET = get("JELLYFIN_WEBHOOK_SECRET", "")
+PROACTIVE_RATING_PROMPT = get("PROACTIVE_RATING_PROMPT", "false").lower() == "true"
+JELLYFIN_URL = "http://{}:{}".format(get("JELLYFIN_HOST", "192.168.1.21"), get("JELLYFIN_PORT", "8096"))

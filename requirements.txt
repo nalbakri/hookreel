@@ -1,56 +1,35 @@
 # =============================================================
-# HookReel — Python Dependencies
+# HookReel -- Python Dependencies
 # =============================================================
-
 # Telegram bot interface
 python-telegram-bot==21.5
-
 # HTTP requests to APIs (Prowlarr, Jellyfin, etc.)
 requests==2.33.1
-
 # Load .env files into environment
 python-dotenv==1.2.2
-
 # ClamAV antivirus client
 pyclamd==0.4.0
-
 # The Movie Database API wrapper
 tmdbsimple==2.9.1
-
 # qBittorrent Web API client
 qbittorrent-api==2024.3.60
-
-# Web framework for the future web UI
-fastapi==0.115.0
-
-# NOTE: CVE-2024-47874, CVE-2025-54121 exist but version pinned b
-starlette==0.38.6
-
+# Web framework -- unpinned, let pip resolve latest stable
+fastapi
 # ASGI server to run FastAPI
 uvicorn==0.30.6
-
 # HTML templating for web UI
 jinja2==3.1.6
-
 # Async file I/O
 aiofiles==25.1.0
-
 # OpenAI-compatible client (works with DeepSeek and Ollama)
 openai==1.51.0
-
 # BeautifulSoup4
 beautifulsoup4==4.12.3
-pyclamd==0.4.0
-
-# Httpx
+# Httpx -- pinned, do not upgrade
 httpx==0.27.2
-
 # Signed session cookies for web UI auth
 itsdangerous==2.2.0
-
-# NOTE: CVE-2024-53981, CVE-2026-24486 exist but version is pinned for compatibility
-# Form data parsing for FastAPI login form
-python-multipart==0.0.9
-
+# Form data parsing for FastAPI -- upgraded to fix CVE-2024-53981 and CVE-2026-24486
+python-multipart==0.0.26
 # Test runner
 pytest==8.3.3

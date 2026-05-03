@@ -127,3 +127,72 @@ Installation is identical to x86:
 
 Note: ClamAV may take longer to start on Raspberry Pi (10-15 minutes on
 first run while downloading virus definitions). This is normal.
+
+
+---
+
+## Optional: Automatic Watch Tracking via Jellyfin
+
+HookReel can automatically update your watch history when you watch content
+in Jellyfin. This requires the Jellyfin Webhook Plugin to be installed.
+
+Note: The Jellyfin plugin system is sandboxed -- this step cannot be
+automated. You must install the plugin manually.
+
+### Step 1 -- Install the Jellyfin Webhook Plugin
+
+1. Open Jellyfin in your browser
+2. Go to Dashboard > Plugins > Catalogue
+3. Search for "Webhook"
+4. Install the "Webhook" plugin by Jellyfin
+5. Restart Jellyfin when prompted
+
+### Step 2 -- Configure the Webhook
+
+1. Go to Dashboard > Plugins > Webhook
+2. Click "Add Generic Destination"
+3. Set the URL to:
+
+    http://<hookreel-host>:8765/webhooks/jellyfin
+
+   Replace <hookreel-host> with your HookReel server IP or hostname.
+   Example: http://192.168.1.21:8765/webhooks/jellyfin
+
+4. Set the following notification types:
+   - Playback Stop
+   - Playback Start (optional)
+
+5. Set Request Type to POST
+6. Set Template to the default JSON template
+7. Save
+
+### Step 3 -- Optional: Secure the Webhook
+
+To prevent unauthorised payloads, set a shared secret:
+
+1. In HookReel config/.env, set:
+
+    JELLYFIN_WEBHOOK_SECRET=your-secret-here
+
+2. In the Jellyfin Webhook plugin, set the same value in the
+   "Secret" field.
+
+3. Restart HookReel:
+
+    docker compose restart hookreel
+
+### Verification
+
+After setup, play a movie or episode in Jellyfin. HookReel will log:
+
+    [HookReel] Jellyfin webhook: event=PlaybackStop type=Movie completed=True
+    [HookReel] Webhook: marked movie 'Movie Title' as watched (completed=True)
+
+If no webhook events are received within 24 hours after enabling Jellyfin
+integration, HookReel will log a reminder suggesting you install the plugin.
+
+### Graceful Degradation
+
+If the Jellyfin Webhook Plugin is not installed, all HookReel features
+continue to work normally. Watch history can be updated manually via the
+agent: "mark Pulp Fiction as watched".

@@ -2,10 +2,11 @@
 app/pipeline.py
 
 HookReel pipeline coordinator.
-Orchestrates the full movie request flow: search → select → add torrent → store hash.
+Orchestrates the full movie request flow: search -> select -> add torrent -> store hash.
 """
 
 import re
+import time
 
 from app import config, database, prowlarr, qbittorrent
 from app.logger import get_logger
@@ -23,13 +24,9 @@ def sanitise_title(title: str) -> str:
     """
     if not title:
         return ""
-    # Strip characters that could affect SQL, filesystem, or shell
     title = re.sub(r'[<>:"/\\|?*;&$(){}]', '', title)
-    # Collapse multiple spaces
     title = re.sub(r' +', ' ', title)
-    # Strip leading/trailing whitespace
     title = title.strip()
-    # Truncate to 200 characters
     return title[:200]
 
 def get_metadata_provider():
@@ -43,10 +40,7 @@ def get_metadata_provider():
 def _validate_download_url(url: str) -> bool:
     """
     Validate that a download URL is a safe, expected format.
-
     Only magnet links and http/https URLs are accepted.
-    Anything else is rejected to prevent unexpected input from
-    reaching qBittorrent.
     """
     if not url:
         return False
@@ -64,24 +58,52 @@ def request_movie(
 
     If download_url is provided (user confirmed a specific release),
     Steps 1 and 2 are skipped. The provided URL is validated and
-    passed directly to qBittorrent. This ensures the user always
-    gets the exact release they chose.
+    passed directly to qBittorrent.
 
     If download_url is not provided, the full pipeline runs:
       1. Metadata lookup (TMDB or OMDB) for canonical title/year
       2. Prowlarr search for matching torrent releases
       3. Add best result to qBittorrent (tries up to 5 candidates)
-      4. Hash lookup for torrent tracking
+      4. Hash captured directly from magnet URL or via fallback lookup
       5. Record in database with status 'downloading'
 
     Returns a result dict with keys:
-      success, title, year, status, movie_id, message.
+      success, title, year, status, movie_id, torrent_hash, message.
     """
     title = sanitise_title(title)
     log_audit("download_requested", {"title": title, "year": year or "unknown"}, "system")
     logger.info("[HookReel] Pipeline: request_movie called for '%s'", title)
 
     # --- Fast path: user confirmed a specific release ---
+    # If release_title given but no download_url, re-fetch a fresh URL from Prowlarr
+    if release_title and not download_url:
+        logger.info(
+            "[HookReel] Re-fetching fresh download URL for release: %s", release_title
+        )
+        fresh_results = prowlarr.search_releases(release_title, category=2000)
+        if fresh_results:
+            from app.qbittorrent import _resolve_to_magnet
+            for candidate in fresh_results:
+                candidate_url = candidate.get("download_url", "")
+                if not candidate_url:
+                    continue
+                resolved = _resolve_to_magnet(candidate_url)
+                if resolved.startswith("magnet:"):
+                    download_url = resolved
+                    logger.info(
+                        "[HookReel] Re-fetch resolved magnet for '%s'",
+                        release_title
+                    )
+                    break
+            if not download_url:
+                logger.warning(
+                    "[HookReel] Re-fetch could not resolve any magnet for: %s",
+                    release_title
+                )
+        else:
+            logger.warning(
+                "[HookReel] Re-fetch found no results for release: %s", release_title
+            )
     if download_url:
         if not _validate_download_url(download_url):
             logger.warning(
@@ -97,42 +119,25 @@ def request_movie(
             "[HookReel] Using user-confirmed release: %s", used_release_title
         )
 
-        # Step 3 — Add torrent directly (skip metadata + Prowlarr search)
-        try:
-            added = qbittorrent.add_torrent(
-                download_url, save_path=config.DOWNLOADS_PATH
-            )
-            if not added:
-                return {
-                    "success": False,
-                    "message": (
-                        f"qBittorrent rejected the release: {used_release_title}"
-                    ),
-                }
-        except Exception as error:
-            logger.error("[HookReel] qBittorrent add failed: %s", error)
-            return {"success": False, "message": f"qBittorrent error: {error}"}
-
-        # Step 4 — Hash lookup
-        torrent_hash = None
-        try:
-            import time
-            time.sleep(3)
-            torrent_hash = qbittorrent.get_torrent_hash_by_name(used_release_title)
-            if torrent_hash:
-                logger.info("[HookReel] Torrent hash found: %s", torrent_hash)
-            else:
+        # Step 3 -- Add torrent, hash returned directly
+        torrent_hash = qbittorrent.add_torrent(
+            download_url, save_path=config.DOWNLOADS_PATH
+        )
+        if torrent_hash is None:
+            # add_torrent returns None on qBittorrent rejection
+            # but also None when hash cannot be determined
+            # distinguish by re-checking torrent list
+            time.sleep(2)
+            from app.qbittorrent import get_torrent_hash_by_name
+            torrent_hash = get_torrent_hash_by_name(used_release_title)
+            if torrent_hash is None:
                 logger.warning(
-                    "[HookReel] Torrent hash not found for '%s' — will track by name",
+                    "[HookReel] qBittorrent may have rejected '%s' or hash unavailable",
                     used_release_title,
                 )
-        except Exception as error:
-            logger.warning("[HookReel] Hash lookup error (non-fatal): %s", error)
 
-        # Step 5 — Store in database
-        # Use title as-is for the fast path — no metadata lookup
+        # Step 4 -- Store in database
         try:
-            # Strip trailing year from title if present
             clean_title = title.strip()
             year_hint = year or ""
             year_match = re.search(r'\b(19|20)\d{2}$', clean_title)
@@ -141,23 +146,24 @@ def request_movie(
                 clean_title = clean_title[:year_match.start()].strip()
 
             movie_id = database.add_movie(0, clean_title, year_hint)
-            database.update_movie_status(movie_id, "downloading")
+            new_status = "downloading" if torrent_hash else "failed"
+            database.update_movie_status(movie_id, new_status)
             if torrent_hash:
                 database.update_movie_torrent_hash(movie_id, torrent_hash)
             logger.info(
                 "[HookReel] Movie recorded (fast path): id=%d title='%s' hash=%s",
-                movie_id, clean_title, torrent_hash or "not found",
+                movie_id, clean_title, torrent_hash or "none",
             )
         except Exception as error:
             logger.error("[HookReel] Database write failed: %s", error)
             return {"success": False, "message": f"Database error: {error}"}
-        
+
         log_audit("download_started", {"title": clean_title, "year": year_hint, "path": "fast"}, "system")
         return {
             "success": True,
             "title": clean_title,
             "year": year_hint,
-            "status": "downloading",
+            "status": new_status,
             "movie_id": movie_id,
             "torrent_hash": torrent_hash,
             "message": f"'{clean_title}' added to download queue (user-confirmed release)",
@@ -165,12 +171,10 @@ def request_movie(
 
     # --- Standard path: no specific release chosen ---
 
-    # Step 1 — Metadata lookup
+    # Step 1 -- Metadata lookup
     try:
         provider = get_metadata_provider()
 
-        # Strip a trailing 4-digit year from the title if the agent included it
-        # e.g. 'Spaceballs 1987' → title='Spaceballs', year_hint='1987'
         year_hint = year or ""
         clean_title = title.strip()
         year_match = re.search(r'\b(19|20)\d{2}$', clean_title)
@@ -201,7 +205,7 @@ def request_movie(
         logger.error("[HookReel] Metadata lookup failed: %s", error)
         return {"success": False, "message": f"Metadata lookup error: {error}"}
 
-    # Step 2 — Prowlarr search
+    # Step 2 -- Prowlarr search
     try:
         search_query = f"{canonical_title} {year_hint}".strip()
         prowlarr_results = prowlarr.search_releases(search_query)
@@ -211,7 +215,6 @@ def request_movie(
                 "message": f"No torrents found for '{search_query}'",
             }
 
-        # Prefer results with magnet or download links — try up to 5 results
         best_result = None
         magnet_url = ""
         release_name = search_query
@@ -239,13 +242,16 @@ def request_movie(
         logger.error("[HookReel] Prowlarr search failed: %s", error)
         return {"success": False, "message": f"Search error: {error}"}
 
-    # Step 3 — Add torrent, trying up to 5 results on failure
-    added = False
+    # Step 3 -- Add torrent, hash returned directly
+    torrent_hash = None
     try:
-        added = qbittorrent.add_torrent(magnet_url, save_path=config.DOWNLOADS_PATH)
-        if not added:
+        torrent_hash = qbittorrent.add_torrent(magnet_url, save_path=config.DOWNLOADS_PATH)
+        if torrent_hash is not None:
+            logger.info("[HookReel] Torrent added, hash: %s", torrent_hash)
+        else:
+            # First candidate failed or hash unavailable -- try alternatives
             logger.warning(
-                "[HookReel] First release rejected by qBittorrent — trying alternatives"
+                "[HookReel] First release failed or hash unavailable -- trying alternatives"
             )
             for candidate in prowlarr_results[1:5]:
                 alt_url = (
@@ -257,41 +263,35 @@ def request_movie(
                     continue
                 alt_title = candidate.get("title", "")
                 logger.info("[HookReel] Trying alternative release: %s", alt_title)
-                if qbittorrent.add_torrent(alt_url, save_path=config.DOWNLOADS_PATH):
+                alt_hash = qbittorrent.add_torrent(alt_url, save_path=config.DOWNLOADS_PATH)
+                if alt_hash is not None:
                     magnet_url = alt_url
                     release_name = alt_title
-                    added = True
+                    torrent_hash = alt_hash
                     logger.info(
-                        "[HookReel] Alternative release accepted: %s", alt_title
+                        "[HookReel] Alternative release accepted: %s hash: %s",
+                        alt_title, torrent_hash,
                     )
                     break
 
-        if not added:
-            return {
-                "success": False,
-                "message": "qBittorrent rejected all available releases",
-            }
+        if torrent_hash is None:
+            # Last resort -- all candidates returned None
+            # Could be rejection or hash-less direct URL
+            # Check if anything was actually added
+            logger.warning("[HookReel] All candidates returned None -- checking qBittorrent")
+            from app.qbittorrent import get_torrent_hash_by_name
+            torrent_hash = get_torrent_hash_by_name(release_name)
+            if torrent_hash is None:
+                return {
+                    "success": False,
+                    "message": "qBittorrent rejected all available releases",
+                }
+
     except Exception as error:
         logger.error("[HookReel] qBittorrent add failed: %s", error)
         return {"success": False, "message": f"qBittorrent error: {error}"}
 
-    # Step 4 — Hash lookup (non-blocking)
-    torrent_hash = None
-    try:
-        import time
-        time.sleep(3)
-        torrent_hash = qbittorrent.get_torrent_hash_by_name(release_name)
-        if torrent_hash:
-            logger.info("[HookReel] Torrent hash found: %s", torrent_hash)
-        else:
-            logger.warning(
-                "[HookReel] Torrent hash not found for '%s' — will track by name",
-                release_name,
-            )
-    except Exception as error:
-        logger.warning("[HookReel] Hash lookup error (non-fatal): %s", error)
-
-    # Step 5 — Store in database
+    # Step 4 -- Store in database
     try:
         movie_id = database.add_movie(provider_id, canonical_title, year_hint)
         database.update_movie_status(movie_id, "downloading")
@@ -299,12 +299,12 @@ def request_movie(
             database.update_movie_torrent_hash(movie_id, torrent_hash)
         logger.info(
             "[HookReel] Movie recorded: id=%d title='%s' hash=%s",
-            movie_id, canonical_title, torrent_hash or "not found",
+            movie_id, canonical_title, torrent_hash or "none",
         )
     except Exception as error:
         logger.error("[HookReel] Database write failed: %s", error)
         return {"success": False, "message": f"Database error: {error}"}
-    
+
     log_audit("download_started", {"title": canonical_title, "year": year_hint, "path": "full"}, "system")
     return {
         "success": True,

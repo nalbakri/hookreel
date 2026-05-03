@@ -119,7 +119,9 @@ def initialise():
     migrate()
     _create_tv_tables()
     _create_watch_history_table()
+    _create_download_events_table()
     _migrate_phase8_columns()
+    _migrate_v11_columns()
     logger.info("[HookReel] Database initialised at %s", DB_PATH)
 
 
@@ -1318,5 +1320,414 @@ def _migrate_phase8_columns():
     except Exception as error:
         logger.error("[HookReel] _migrate_phase8_columns error: %s", error)
         connection.rollback()
+    finally:
+        connection.close()
+
+# ---------------------------------------------------------------------------
+# Download lifecycle events
+# ---------------------------------------------------------------------------
+
+def _create_download_events_table():
+    """
+    Create the download_events table if it does not exist.
+    Called automatically by initialise() at startup.
+    """
+    connection = get_connection()
+    cursor = connection.cursor()
+    try:
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS download_events (
+                id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                movie_id      INTEGER,
+                episode_id    INTEGER,
+                event_type    TEXT    NOT NULL,
+                event_detail  TEXT,
+                torrent_name  TEXT,
+                torrent_hash  TEXT,
+                file_path     TEXT,
+                timestamp     TEXT    NOT NULL
+            )
+        """)
+        connection.commit()
+        logger.info("[HookReel] Download events table ready")
+    except Exception as error:
+        logger.error("[HookReel] _create_download_events_table error: %s", error)
+    finally:
+        connection.close()
+
+
+def log_download_event(
+    event_type,
+    event_detail=None,
+    movie_id=None,
+    episode_id=None,
+    torrent_name=None,
+    torrent_hash=None,
+    file_path=None,
+):
+    """
+    Insert a lifecycle event into download_events.
+    event_type must be one of the defined event type strings.
+    """
+    import datetime
+    connection = get_connection()
+    cursor = connection.cursor()
+    try:
+        cursor.execute("""
+            INSERT INTO download_events
+                (movie_id, episode_id, event_type, event_detail,
+                 torrent_name, torrent_hash, file_path, timestamp)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            movie_id,
+            episode_id,
+            event_type,
+            event_detail,
+            torrent_name,
+            torrent_hash,
+            file_path,
+            datetime.datetime.utcnow().isoformat(),
+        ))
+        connection.commit()
+    except Exception as error:
+        logger.error("[HookReel] log_download_event error: %s", error)
+    finally:
+        connection.close()
+
+
+def get_download_history(movie_id=None, title=None, episode_id=None):
+    """
+    Return lifecycle events for a given movie or episode.
+    Accepts movie_id (int), title (str), or episode_id (int).
+    Returns a list of event dicts ordered by timestamp ascending.
+    """
+    connection = get_connection()
+    cursor = connection.cursor()
+    try:
+        if movie_id:
+            cursor.execute("""
+                SELECT * FROM download_events
+                WHERE movie_id = ?
+                ORDER BY timestamp ASC
+            """, (movie_id,))
+        elif episode_id:
+            cursor.execute("""
+                SELECT * FROM download_events
+                WHERE episode_id = ?
+                ORDER BY timestamp ASC
+            """, (episode_id,))
+        elif title:
+            cursor.execute("""
+                SELECT de.* FROM download_events de
+                LEFT JOIN movies m ON de.movie_id = m.id
+                WHERE LOWER(m.title) LIKE LOWER(?)
+                ORDER BY de.timestamp ASC
+            """, (f"%{title}%",))
+        else:
+            return []
+        rows = cursor.fetchall()
+        columns = [d[0] for d in cursor.description]
+        return [dict(zip(columns, row)) for row in rows]
+    except Exception as error:
+        logger.error("[HookReel] get_download_history error: %s", error)
+        return []
+    finally:
+        connection.close()
+
+
+def get_stuck_downloads(hours=2):
+    """
+    Find movies or episodes that have been in downloading state
+    for more than the given number of hours with no recent events.
+    Returns a list of dicts with title, movie_id, last_event_time.
+    """
+    import datetime
+    connection = get_connection()
+    cursor = connection.cursor()
+    try:
+        cutoff = (
+            datetime.datetime.utcnow() - datetime.timedelta(hours=hours)
+        ).isoformat()
+        cursor.execute("""
+            SELECT m.id, m.title, m.year,
+                   MAX(de.timestamp) as last_event
+            FROM movies m
+            LEFT JOIN download_events de ON de.movie_id = m.id
+            WHERE m.status = 'downloading'
+            GROUP BY m.id
+            HAVING last_event IS NULL OR last_event < ?
+            ORDER BY last_event ASC
+        """, (cutoff,))
+        rows = cursor.fetchall()
+        columns = [d[0] for d in cursor.description]
+        return [dict(zip(columns, row)) for row in rows]
+    except Exception as error:
+        logger.error("[HookReel] get_stuck_downloads error: %s", error)
+        return []
+    finally:
+        connection.close()
+
+# ---------------------------------------------------------------------------
+# v1.1 column migrations
+# ---------------------------------------------------------------------------
+
+def _migrate_v11_columns():
+    """
+    Add v1.1 columns to movies, shows, and episodes tables if not present.
+    Safe to call multiple times -- checks before adding each column.
+    movies:   user_rating INTEGER
+    shows:    user_rating INTEGER
+    episodes: user_rating INTEGER
+    """
+    connection = get_connection()
+    cursor = connection.cursor()
+    try:
+        cursor.execute("PRAGMA table_info(movies)")
+        movie_cols = [row["name"] for row in cursor.fetchall()]
+        if "user_rating" not in movie_cols:
+            cursor.execute("ALTER TABLE movies ADD COLUMN user_rating INTEGER")
+            logger.info("[HookReel] Migration: added user_rating to movies")
+
+        cursor.execute("PRAGMA table_info(shows)")
+        show_cols = [row["name"] for row in cursor.fetchall()]
+        if "user_rating" not in show_cols:
+            cursor.execute("ALTER TABLE shows ADD COLUMN user_rating INTEGER")
+            logger.info("[HookReel] Migration: added user_rating to shows")
+
+        cursor.execute("PRAGMA table_info(episodes)")
+        ep_cols = [row["name"] for row in cursor.fetchall()]
+        if "user_rating" not in ep_cols:
+            cursor.execute("ALTER TABLE episodes ADD COLUMN user_rating INTEGER")
+            logger.info("[HookReel] Migration: added user_rating to episodes")
+
+        connection.commit()
+        cursor.execute("PRAGMA table_info(watch_history)")
+        wh_cols = [row["name"] for row in cursor.fetchall()]
+        if "watch_source" not in wh_cols:
+            cursor.execute("ALTER TABLE watch_history ADD COLUMN watch_source TEXT DEFAULT \"manual\"")
+            logger.info("[HookReel] Migration: added watch_source to watch_history")
+        logger.info("[HookReel] v1.1 column migration complete")
+    except Exception as error:
+        logger.error("[HookReel] _migrate_v11_columns error: %s", error)
+    finally:
+        connection.close()
+
+
+# ---------------------------------------------------------------------------
+# Rating functions
+# ---------------------------------------------------------------------------
+
+def rate_movie(movie_id, rating):
+    """Set user_rating (1-5) for a movie."""
+    connection = get_connection()
+    cursor = connection.cursor()
+    try:
+        cursor.execute(
+            "UPDATE movies SET user_rating = ? WHERE id = ?",
+            (rating, movie_id)
+        )
+        connection.commit()
+        return cursor.rowcount > 0
+    except Exception as error:
+        logger.error("[HookReel] rate_movie error: %s", error)
+        return False
+    finally:
+        connection.close()
+
+
+def rate_show(show_id, rating):
+    """Set user_rating (1-5) for a show."""
+    connection = get_connection()
+    cursor = connection.cursor()
+    try:
+        cursor.execute(
+            "UPDATE shows SET user_rating = ? WHERE id = ?",
+            (rating, show_id)
+        )
+        connection.commit()
+        return cursor.rowcount > 0
+    except Exception as error:
+        logger.error("[HookReel] rate_show error: %s", error)
+        return False
+    finally:
+        connection.close()
+
+
+def rate_episode(episode_id, rating):
+    """Set user_rating (1-5) for an episode."""
+    connection = get_connection()
+    cursor = connection.cursor()
+    try:
+        cursor.execute(
+            "UPDATE episodes SET user_rating = ? WHERE id = ?",
+            (rating, episode_id)
+        )
+        connection.commit()
+        return cursor.rowcount > 0
+    except Exception as error:
+        logger.error("[HookReel] rate_episode error: %s", error)
+        return False
+    finally:
+        connection.close()
+
+
+def get_movie_rating(movie_id):
+    """Get user_rating for a movie. Returns None if not rated."""
+    connection = get_connection()
+    cursor = connection.cursor()
+    try:
+        cursor.execute(
+            "SELECT user_rating FROM movies WHERE id = ?", (movie_id,)
+        )
+        row = cursor.fetchone()
+        return row["user_rating"] if row else None
+    except Exception as error:
+        logger.error("[HookReel] get_movie_rating error: %s", error)
+        return None
+    finally:
+        connection.close()
+
+
+def get_top_rated_movies(limit=10):
+    """Return top rated movies ordered by user_rating descending."""
+    connection = get_connection()
+    cursor = connection.cursor()
+    try:
+        cursor.execute("""
+            SELECT id, title, year, user_rating FROM movies
+            WHERE user_rating IS NOT NULL
+            ORDER BY user_rating DESC, title ASC
+            LIMIT ?
+        """, (limit,))
+        rows = cursor.fetchall()
+        columns = [d[0] for d in cursor.description]
+        return [dict(zip(columns, row)) for row in rows]
+    except Exception as error:
+        logger.error("[HookReel] get_top_rated_movies error: %s", error)
+        return []
+    finally:
+        connection.close()
+
+
+def get_top_rated_shows(limit=10):
+    """Return top rated shows ordered by user_rating descending."""
+    connection = get_connection()
+    cursor = connection.cursor()
+    try:
+        cursor.execute("""
+            SELECT id, title, year, user_rating FROM shows
+            WHERE user_rating IS NOT NULL
+            ORDER BY user_rating DESC, title ASC
+            LIMIT ?
+        """, (limit,))
+        rows = cursor.fetchall()
+        columns = [d[0] for d in cursor.description]
+        return [dict(zip(columns, row)) for row in rows]
+    except Exception as error:
+        logger.error("[HookReel] get_top_rated_shows error: %s", error)
+        return []
+    finally:
+        connection.close()
+
+# ---------------------------------------------------------------------------
+# Watch tracking functions (v1.1)
+# ---------------------------------------------------------------------------
+
+def mark_watched(media_type, media_id, title, watch_source="manual", completed=True):
+    """
+    Mark a movie or episode as watched.
+    media_type: 'movie' or 'episode'
+    media_id:   database ID of the movie or episode
+    title:      human readable title
+    watch_source: 'manual', 'jellyfin_webhook', or 'stream'
+    completed:  True if watched to completion
+    """
+    import datetime
+    connection = get_connection()
+    cursor = connection.cursor()
+    try:
+        now = datetime.datetime.utcnow().isoformat()
+        cursor.execute("""
+            INSERT INTO watch_history
+                (media_type, media_id, title, watched_at,
+                 position_seconds, completed, watch_source)
+            VALUES (?, ?, ?, ?, 0, ?, ?)
+        """, (media_type, media_id, title, now, 1 if completed else 0, watch_source))
+        connection.commit()
+        logger.info("[HookReel] mark_watched: %s id=%d source=%s", title, media_id, watch_source)
+        return cursor.lastrowid
+    except Exception as error:
+        logger.error("[HookReel] mark_watched error: %s", error)
+        return -1
+    finally:
+        connection.close()
+
+
+def mark_unwatched(media_type, media_id):
+    """
+    Remove all watch history entries for a movie or episode.
+    """
+    connection = get_connection()
+    cursor = connection.cursor()
+    try:
+        cursor.execute(
+            "DELETE FROM watch_history WHERE media_type = ? AND media_id = ?",
+            (media_type, media_id)
+        )
+        connection.commit()
+        logger.info("[HookReel] mark_unwatched: %s id=%d", media_type, media_id)
+        return True
+    except Exception as error:
+        logger.error("[HookReel] mark_unwatched error: %s", error)
+        return False
+    finally:
+        connection.close()
+
+
+def get_watch_status(media_type, media_id=None, title=None, show_id=None):
+    """
+    Get watch status for a movie or show.
+    For movies: returns last watched date and completion status.
+    For shows: returns last watched episode and completion summary.
+    """
+    connection = get_connection()
+    cursor = connection.cursor()
+    try:
+        if media_type == "movie" and media_id:
+            cursor.execute("""
+                SELECT * FROM watch_history
+                WHERE media_type = 'movie' AND media_id = ?
+                ORDER BY watched_at DESC LIMIT 1
+            """, (media_id,))
+            row = cursor.fetchone()
+            if not row:
+                return {"watched": False}
+            return {
+                "watched": True,
+                "watched_at": row["watched_at"][:10],
+                "completed": bool(row["completed"]),
+                "title": row["title"],
+            }
+        elif media_type == "episode" and show_id:
+            cursor.execute("""
+                SELECT wh.*, e.season, e.episode FROM watch_history wh
+                JOIN episodes e ON wh.media_id = e.id
+                WHERE wh.media_type = 'episode' AND e.show_id = ?
+                ORDER BY e.season DESC, e.episode DESC LIMIT 1
+            """, (show_id,))
+            row = cursor.fetchone()
+            if not row:
+                return {"watched": False}
+            return {
+                "watched": True,
+                "last_season": row["season"],
+                "last_episode": row["episode"],
+                "watched_at": row["watched_at"][:10],
+                "completed": bool(row["completed"]),
+            }
+        return {"watched": False}
+    except Exception as error:
+        logger.error("[HookReel] get_watch_status error: %s", error)
+        return {"watched": False}
     finally:
         connection.close()

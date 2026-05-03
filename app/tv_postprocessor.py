@@ -8,6 +8,7 @@ import shutil
 import app.database as database
 from app.logger import get_logger
 from app import config
+from app.database import log_download_event
 
 logger = get_logger(__name__)
 
@@ -161,6 +162,7 @@ def process_episode(episode: dict, show: dict) -> bool:
     season = episode.get("season")
     ep_num = episode.get("episode")
     ep_title = episode.get("title", "Unknown")
+    torrent_hash = episode.get("torrent_hash", "")
 
     if not file_path or not os.path.exists(file_path):
         logger.warning(
@@ -168,18 +170,21 @@ def process_episode(episode: dict, show: dict) -> bool:
             episode_id, file_path
         )
         database.update_episode_status(episode_id, "failed")
+        log_download_event("processing_failed", "File not found", episode_id=episode_id, torrent_hash=torrent_hash)
         return False
 
     # Step 1: ClamAV scan
     is_clean = _scan_episode(file_path)
     if not is_clean:
         database.update_episode_status(episode_id, "quarantined")
+        log_download_event("clamav_failed", "Virus found, file quarantined", episode_id=episode_id, torrent_hash=torrent_hash, file_path=file_path)
         logger.warning(
             "[HookReel] Episode quarantined: episode_id=%d", episode_id
         )
         return False
 
     database.update_episode_status(episode_id, "renamed")
+    log_download_event("clamav_passed", "Scan clean", episode_id=episode_id, torrent_hash=torrent_hash, file_path=file_path)
 
     # Step 2: Rename and move
     new_path = rename_episode(
@@ -189,8 +194,11 @@ def process_episode(episode: dict, show: dict) -> bool:
         episode_id, "complete", file_path=new_path
     )
 
+    log_download_event("rename_complete", f"Renamed to {new_path}", episode_id=episode_id, torrent_hash=torrent_hash, file_path=new_path)
+    log_download_event("move_complete", f"Moved to {new_path}", episode_id=episode_id, torrent_hash=torrent_hash, file_path=new_path)
     # Step 3: Notify Jellyfin
     _notify_jellyfin_tv(show_title)
+    log_download_event("jellyfin_notified", "Jellyfin library scan triggered", episode_id=episode_id, torrent_hash=torrent_hash)
 
     logger.info(
         "[HookReel] Episode processing complete: episode_id=%d path=%s",

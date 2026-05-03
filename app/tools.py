@@ -98,11 +98,10 @@ TOOL_SCHEMAS = [
                     "download_url": {
                         "type": "string",
                         "description": (
-                            "The direct download URL of the specific release the user "
-                            "confirmed. Comes from the download_url field in "
-                            "search_movie results. Must start with magnet:? or http. "
-                            "When provided, the pipeline downloads this exact release "
-                            "and skips its internal search."
+                            "A magnet link provided directly by the user. "
+                            "Must start with magnet:?. Only use this when the user "
+                            "pastes a magnet link themselves. Do NOT pass download URLs "
+                            "from search_movie results here -- pass release_title instead."
                         ),
                     },
                     "release_title": {
@@ -578,20 +577,15 @@ def _tool_search_movie(query: str) -> str:
         results = search_releases(query, category=2000)
         if not results:
             return "No results found for that search."
-        lines = [f"Found {len(results)} result(s) for '{query}':"]
-        for index, release in enumerate(results[:10], start=1):
+        top_results = sorted(results, key=lambda r: r.get("seeders", 0), reverse=True)[:5]
+        lines = [f"Found {len(results)} result(s) for '{query}'. Showing top {len(top_results)}:"]
+        for index, release in enumerate(top_results, start=1):
             title = release.get("title", "Unknown")
-            size_bytes = release.get("size", 0)
+            size_bytes = release.get("size_bytes", 0) or release.get("size", 0)
             size_gb = size_bytes / (1024 ** 3) if size_bytes else 0
             seeders = release.get("seeders", 0)
-            download_url = (
-                release.get("magnetUrl")
-                or release.get("downloadUrl")
-                or release.get("download_url", "")
-            )
             lines.append(
                 f"  {index}. {title} | {size_gb:.2f} GB | {seeders} seeders"
-                f" | download_url: {download_url}"
             )
         return "\n".join(lines)
     except Exception as error:
@@ -661,41 +655,44 @@ def _tool_get_download_status(movie_id: int) -> str:
     """Check download status for a movie by its database ID."""
     logger.info("[HookReel] tool get_download_status called: movie_id=%s", movie_id)
     try:
-        from app.qbittorrent import get_torrent_status, get_torrent_hash_by_name
+        from app.qbittorrent import get_torrent_status
         movie = get_movie_by_id(movie_id)
         if not movie:
-            return f"No movie found with ID {movie_id}."
+            return "No movie found with ID {}.".format(movie_id)
         title = movie.get("title", "Unknown")
         status = movie.get("status", "unknown")
-        torrent_name = movie.get("torrent_name")
-        if not torrent_name:
-            return (
-                f"'{title}' (ID {movie_id}) — status: {status}. "
-                "No torrent name recorded yet."
-            )
-        torrent_hash = get_torrent_hash_by_name(torrent_name)
+        torrent_hash = movie.get("torrent_hash")
         if not torrent_hash:
-            return (
-                f"'{title}' (ID {movie_id}) — status: {status}. "
-                "Torrent not found in qBittorrent."
+            return "'{}' (ID {}) -- status: {}. No torrent hash recorded.".format(
+                title, movie_id, status
             )
         torrent_info = get_torrent_status(torrent_hash)
         if not torrent_info:
-            return f"'{title}' (ID {movie_id}) — status: {status}. No torrent data."
+            return "'{}' (ID {}) -- status: {}. No torrent data in qBittorrent.".format(
+                title, movie_id, status
+            )
         progress = torrent_info.get("progress", 0) * 100
-        eta_seconds = torrent_info.get("eta", 0)
-        eta_minutes = int(eta_seconds / 60) if eta_seconds else 0
-        filled = int(progress / 10)
-        bar = "█" * filled + "░" * (10 - filled)
-        eta_text = f"about {eta_minutes} min remaining" if eta_minutes else "calculating..."
-        return (
-            f"'{title}' (ID {movie_id})\n"
-            f"{bar} {progress:.0f}% — {eta_text}\n"
-            f"Status: {status}"
+        eta_seconds = torrent_info.get("eta", 8640000)
+        total_bytes = torrent_info.get("total_size", 0)
+        downloaded_bytes = torrent_info.get("completed", 0)
+        total_mb = round(total_bytes / 1024 / 1024, 1) if total_bytes else 0
+        downloaded_mb = round(downloaded_bytes / 1024 / 1024, 1) if downloaded_bytes else 0
+        if eta_seconds and eta_seconds < 8640000:
+            eta_minutes = int(eta_seconds / 60)
+            eta_text = "about {} min remaining".format(eta_minutes)
+        else:
+            eta_text = "calculating..."
+        bar_filled = int(progress / 10)
+        bar = "[" + "#" * bar_filled + "-" * (10 - bar_filled) + "]"
+        size_text = ""
+        if total_mb:
+            size_text = "\nSize: {}MB total, {}MB downloaded".format(total_mb, downloaded_mb)
+        return "'{}' (ID {})\n{} {:.0f}% -- {}\nStatus: {}{}".format(
+            title, movie_id, bar, progress, eta_text, status, size_text
         )
     except Exception as error:
         logger.error("[HookReel] tool get_download_status failed: %s", error)
-        return f"Could not check download status: {error}"
+        return "Could not check download status: {}".format(error)
 
 
 def _tool_list_library() -> str:
@@ -1333,6 +1330,21 @@ _TOOL_DISPATCH = {
     "get_agent_info": lambda args: _tool_get_agent_info(),
     "update_agent_name": lambda args: _tool_update_agent_name(**args),
     "update_personality": lambda args: _tool_update_personality(**args),
+    # Download lifecycle (v1.1)
+    "get_download_history": lambda args: _tool_get_download_history(**args),
+    "get_stuck_downloads": lambda args: _tool_get_stuck_downloads(**args),
+    # Rating tools (v1.1)
+    "rate_content": lambda args: _tool_rate_content(**args),
+    "get_rating": lambda args: _tool_get_rating(**args),
+    "get_top_rated": lambda args: _tool_get_top_rated(**args),
+    # Watch tracking (v1.1)
+    "mark_watched": lambda args: _tool_mark_watched(**args),
+    "mark_unwatched": lambda args: _tool_mark_unwatched(**args),
+    "get_watch_status": lambda args: _tool_get_watch_status(**args),
+    # Suggestion engine (v1.1)
+    "get_suggestions": lambda args: _tool_get_suggestions(**args),
+    # Dedupe detection (v1.1)
+    "find_duplicates": lambda args: _tool_find_duplicates(**args),
 
 }
 
@@ -1674,3 +1686,687 @@ def _tool_scan_library() -> str:
     except Exception as exc:
         logger.error("[HookReel] _tool_scan_library error: %s", exc)
         return "Library scan failed: {}".format(exc)
+
+# ---------------------------------------------------------------------------
+# Download lifecycle tools (v1.1)
+# ---------------------------------------------------------------------------
+TOOL_SCHEMAS.append({
+    "type": "function",
+    "function": {
+        "name": "get_download_history",
+        "description": (
+            "Get the full download lifecycle history for a movie or episode. "
+            "Use this to answer questions like 'what happened to my Blade Runner download?' "
+            "Returns a timeline of events from request to completion."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "title": {
+                    "type": "string",
+                    "description": "Movie or show title to look up history for.",
+                },
+                "movie_id": {
+                    "type": "integer",
+                    "description": "Movie ID if known.",
+                },
+            },
+            "required": [],
+        },
+    },
+})
+
+TOOL_SCHEMAS.append({
+    "type": "function",
+    "function": {
+        "name": "get_stuck_downloads",
+        "description": (
+            "Find downloads that have been stuck in downloading state for more than 2 hours "
+            "with no recent progress events. Use this to diagnose stalled downloads."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "hours": {
+                    "type": "integer",
+                    "description": "Number of hours without activity to consider stuck. Default 2.",
+                },
+            },
+            "required": [],
+        },
+    },
+})
+
+
+def _tool_get_download_history(title=None, movie_id=None):
+    """Return lifecycle events for a movie or episode as a formatted timeline."""
+    try:
+        events = database.get_download_history(movie_id=movie_id, title=title)
+        if not events:
+            return "No download history found for '{}'.".format(title or movie_id)
+        lines = ["Download history for '{}':".format(title or movie_id)]
+        for ev in events:
+            ts = ev.get("timestamp", "")[:19]
+            etype = ev.get("event_type", "")
+            detail = ev.get("event_detail", "")
+            lines.append("  [{}] {} -- {}".format(ts, etype, detail))
+        return "\n".join(lines)
+    except Exception as exc:
+        logger.error("[HookReel] _tool_get_download_history error: %s", exc)
+        return "Error retrieving download history: {}".format(exc)
+
+
+def _tool_get_stuck_downloads(hours=2):
+    """Return a list of downloads stuck for more than N hours."""
+    try:
+        stuck = database.get_stuck_downloads(hours=hours)
+        if not stuck:
+            return "No stuck downloads found (threshold: {} hours).".format(hours)
+        lines = ["Stuck downloads (no activity for {} hours):".format(hours)]
+        for item in stuck:
+            last = item.get("last_event") or "never"
+            lines.append("  '{}' ({}) -- last event: {}".format(
+                item.get("title", "Unknown"),
+                item.get("year", ""),
+                last,
+            ))
+        return "\n".join(lines)
+    except Exception as exc:
+        logger.error("[HookReel] _tool_get_stuck_downloads error: %s", exc)
+        return "Error retrieving stuck downloads: {}".format(exc)
+
+
+# ---------------------------------------------------------------------------
+# Rating tools (v1.1)
+# ---------------------------------------------------------------------------
+TOOL_SCHEMAS.append({
+    "type": "function",
+    "function": {
+        "name": "rate_content",
+        "description": (
+            "Set a 1-5 star rating for a movie, TV show, or episode. "
+            "Use this when the user says things like 'rate Pulp Fiction 5 stars', "
+            "'give Breaking Bad 4 stars', 'that was amazing, 5 stars', "
+            "'I would give it 3 out of 5'. "
+            "Always confirm back: 'Got it -- Pulp Fiction rated 5 stars.'"
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "title": {
+                    "type": "string",
+                    "description": "Title of the movie or show to rate.",
+                },
+                "rating": {
+                    "type": "integer",
+                    "description": "Star rating from 1 to 5.",
+                },
+                "content_type": {
+                    "type": "string",
+                    "description": "One of: movie, show, episode.",
+                },
+                "season": {
+                    "type": "integer",
+                    "description": "Season number (for episode ratings only).",
+                },
+                "episode": {
+                    "type": "integer",
+                    "description": "Episode number (for episode ratings only).",
+                },
+            },
+            "required": ["title", "rating"],
+        },
+    },
+})
+
+TOOL_SCHEMAS.append({
+    "type": "function",
+    "function": {
+        "name": "get_rating",
+        "description": "Get the current user star rating for a movie or show.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "title": {
+                    "type": "string",
+                    "description": "Title of the movie or show.",
+                },
+                "content_type": {
+                    "type": "string",
+                    "description": "One of: movie, show.",
+                },
+            },
+            "required": ["title"],
+        },
+    },
+})
+
+TOOL_SCHEMAS.append({
+    "type": "function",
+    "function": {
+        "name": "get_top_rated",
+        "description": "List the highest rated movies or shows in the library.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "content_type": {
+                    "type": "string",
+                    "description": "One of: movie, show. Omit for both.",
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Maximum number of results to return. Default 10.",
+                },
+            },
+            "required": [],
+        },
+    },
+})
+
+
+def _tool_rate_content(title, rating, content_type="movie", season=None, episode=None):
+    """Set a 1-5 star rating for a movie, show, or episode."""
+    try:
+        if not 1 <= int(rating) <= 5:
+            return "Rating must be between 1 and 5 stars."
+        rating = int(rating)
+        content_type = (content_type or "movie").lower()
+
+        if content_type == "movie":
+            movies = database.get_movies_by_title(title)
+            if not movies:
+                return "Movie '{}' not found in library.".format(title)
+            movie = movies[0]
+            database.rate_movie(movie["id"], rating)
+            stars = "*" * rating
+            return "Got it -- {} rated {} ({} stars).".format(movie["title"], stars, rating)
+
+        elif content_type == "show":
+            shows = database.get_show_by_title(title)
+            if not shows:
+                return "Show '{}' not found in library.".format(title)
+            show = shows[0]
+            database.rate_show(show["id"], rating)
+            stars = "*" * rating
+            return "Got it -- {} rated {} ({} stars).".format(show["title"], stars, rating)
+
+        elif content_type == "episode":
+            shows = database.get_show_by_title(title)
+            if not shows:
+                return "Show '{}' not found in library.".format(title)
+            show = shows[0]
+            if season and episode:
+                ep = database.get_episode(show["id"], season, episode)
+                if not ep:
+                    return "Episode S{:02d}E{:02d} of '{}' not found.".format(season, episode, title)
+                database.rate_episode(ep["id"], rating)
+                stars = "*" * rating
+                return "Got it -- {} S{:02d}E{:02d} rated {} ({} stars).".format(
+                    show["title"], season, episode, stars, rating
+                )
+            return "Please specify season and episode number for episode ratings."
+
+        return "Unknown content type '{}'. Use movie, show, or episode.".format(content_type)
+
+    except Exception as exc:
+        logger.error("[HookReel] _tool_rate_content error: %s", exc)
+        return "Error setting rating: {}".format(exc)
+
+
+def _tool_get_rating(title, content_type="movie"):
+    """Get the current user rating for a movie or show."""
+    try:
+        content_type = (content_type or "movie").lower()
+        if content_type == "movie":
+            movies = database.get_movies_by_title(title)
+            if not movies:
+                return "Movie '{}' not found in library.".format(title)
+            movie = movies[0]
+            r = database.get_movie_rating(movie["id"])
+            if r is None:
+                return "'{}' has not been rated yet.".format(movie["title"])
+            stars = "*" * r
+            return "'{}' is rated {} ({} stars).".format(movie["title"], stars, r)
+        elif content_type == "show":
+            shows = database.get_show_by_title(title)
+            if not shows:
+                return "Show '{}' not found in library.".format(title)
+            show = shows[0]
+            r = show.get("user_rating")
+            if r is None:
+                return "'{}' has not been rated yet.".format(show["title"])
+            stars = "*" * r
+            return "'{}' is rated {} ({} stars).".format(show["title"], stars, r)
+        return "Unknown content type. Use movie or show."
+    except Exception as exc:
+        logger.error("[HookReel] _tool_get_rating error: %s", exc)
+        return "Error retrieving rating: {}".format(exc)
+
+
+def _tool_get_top_rated(content_type=None, limit=10):
+    """List top rated movies and/or shows."""
+    try:
+        limit = int(limit) if limit else 10
+        results = []
+        if content_type in (None, "movie"):
+            movies = database.get_top_rated_movies(limit=limit)
+            for m in movies:
+                stars = "*" * (m["user_rating"] or 0)
+                results.append("  [Movie] {} ({}) -- {}".format(
+                    m["title"], m.get("year", ""), stars
+                ))
+        if content_type in (None, "show"):
+            shows = database.get_top_rated_shows(limit=limit)
+            for s in shows:
+                stars = "*" * (s["user_rating"] or 0)
+                results.append("  [Show]  {} ({}) -- {}".format(
+                    s["title"], s.get("year", ""), stars
+                ))
+        if not results:
+            return "No rated content found yet. Rate something first."
+        return "Top rated content:\n" + "\n".join(results)
+    except Exception as exc:
+        logger.error("[HookReel] _tool_get_top_rated error: %s", exc)
+        return "Error retrieving top rated content: {}".format(exc)
+
+# ---------------------------------------------------------------------------
+# Watch tracking tools (v1.1)
+# ---------------------------------------------------------------------------
+TOOL_SCHEMAS.append({
+    "type": "function",
+    "function": {
+        "name": "mark_watched",
+        "description": (
+            "Mark a movie or TV episode as watched. "
+            "Use when the user says 'I watched Pulp Fiction' or 'mark Breaking Bad S02E05 as watched'."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "title": {
+                    "type": "string",
+                    "description": "Title of the movie or show.",
+                },
+                "content_type": {
+                    "type": "string",
+                    "description": "One of: movie, episode.",
+                },
+                "season": {
+                    "type": "integer",
+                    "description": "Season number (for episodes only).",
+                },
+                "episode": {
+                    "type": "integer",
+                    "description": "Episode number (for episodes only).",
+                },
+            },
+            "required": ["title"],
+        },
+    },
+})
+
+TOOL_SCHEMAS.append({
+    "type": "function",
+    "function": {
+        "name": "mark_unwatched",
+        "description": "Remove watched status from a movie or episode.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "title": {
+                    "type": "string",
+                    "description": "Title of the movie or show.",
+                },
+                "content_type": {
+                    "type": "string",
+                    "description": "One of: movie, episode.",
+                },
+                "season": {
+                    "type": "integer",
+                    "description": "Season number (for episodes only).",
+                },
+                "episode": {
+                    "type": "integer",
+                    "description": "Episode number (for episodes only).",
+                },
+            },
+            "required": ["title"],
+        },
+    },
+})
+
+TOOL_SCHEMAS.append({
+    "type": "function",
+    "function": {
+        "name": "get_watch_status",
+        "description": (
+            "Check watch status for a movie or show. "
+            "Use for questions like 'have I seen Pulp Fiction?', "
+            "'where was I up to in Breaking Bad?', 'what have I watched?'."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "title": {
+                    "type": "string",
+                    "description": "Title of the movie or show.",
+                },
+                "content_type": {
+                    "type": "string",
+                    "description": "One of: movie, show.",
+                },
+            },
+            "required": ["title"],
+        },
+    },
+})
+
+
+def _tool_mark_watched(title, content_type="movie", season=None, episode=None):
+    """Mark a movie or episode as watched."""
+    try:
+        content_type = (content_type or "movie").lower()
+        if content_type == "movie":
+            movies = database.get_movies_by_title(title)
+            if not movies:
+                return "Movie '{}' not found in library.".format(title)
+            movie = movies[0]
+            database.mark_watched("movie", movie["id"], movie["title"])
+            return "Marked '{}' as watched.".format(movie["title"])
+        elif content_type == "episode":
+            shows = database.get_show_by_title(title)
+            if not shows:
+                return "Show '{}' not found in library.".format(title)
+            show = shows[0]
+            if season and episode:
+                ep = database.get_episode(show["id"], season, episode)
+                if not ep:
+                    return "Episode S{:02d}E{:02d} of '{}' not found.".format(season, episode, title)
+                ep_title = "{} S{:02d}E{:02d}".format(show["title"], season, episode)
+                database.mark_watched("episode", ep["id"], ep_title)
+                return "Marked {} as watched.".format(ep_title)
+            return "Please specify season and episode number."
+        return "Unknown content type. Use movie or episode."
+    except Exception as exc:
+        logger.error("[HookReel] _tool_mark_watched error: %s", exc)
+        return "Error marking as watched: {}".format(exc)
+
+
+def _tool_mark_unwatched(title, content_type="movie", season=None, episode=None):
+    """Remove watched status from a movie or episode."""
+    try:
+        content_type = (content_type or "movie").lower()
+        if content_type == "movie":
+            movies = database.get_movies_by_title(title)
+            if not movies:
+                return "Movie '{}' not found in library.".format(title)
+            movie = movies[0]
+            database.mark_unwatched("movie", movie["id"])
+            return "Removed watched status from '{}'.".format(movie["title"])
+        elif content_type == "episode":
+            shows = database.get_show_by_title(title)
+            if not shows:
+                return "Show '{}' not found in library.".format(title)
+            show = shows[0]
+            if season and episode:
+                ep = database.get_episode(show["id"], season, episode)
+                if not ep:
+                    return "Episode S{:02d}E{:02d} of '{}' not found.".format(season, episode, title)
+                database.mark_unwatched("episode", ep["id"])
+                return "Removed watched status from {} S{:02d}E{:02d}.".format(show["title"], season, episode)
+            return "Please specify season and episode number."
+        return "Unknown content type. Use movie or episode."
+    except Exception as exc:
+        logger.error("[HookReel] _tool_mark_unwatched error: %s", exc)
+        return "Error removing watched status: {}".format(exc)
+
+
+def _tool_get_watch_status(title, content_type="movie"):
+    """Get watch status for a movie or show."""
+    try:
+        content_type = (content_type or "movie").lower()
+        if content_type == "movie":
+            movies = database.get_movies_by_title(title)
+            if not movies:
+                return "Movie '{}' not found in library.".format(title)
+            movie = movies[0]
+            status = database.get_watch_status("movie", media_id=movie["id"])
+            if not status.get("watched"):
+                return "You have not watched '{}' yet.".format(movie["title"])
+            date = status.get("watched_at", "unknown date")
+            return "You watched '{}' on {}.".format(movie["title"], date)
+        elif content_type == "show":
+            shows = database.get_show_by_title(title)
+            if not shows:
+                return "Show '{}' not found in library.".format(title)
+            show = shows[0]
+            status = database.get_watch_status("episode", show_id=show["id"])
+            if not status.get("watched"):
+                return "You have not watched any episodes of '{}' yet.".format(show["title"])
+            s = status.get("last_season", 0)
+            e = status.get("last_episode", 0)
+            return "You have watched up to S{:02d}E{:02d} of '{}'.".format(s, e, show["title"])
+        return "Unknown content type. Use movie or show."
+    except Exception as exc:
+        logger.error("[HookReel] _tool_get_watch_status error: %s", exc)
+        return "Error retrieving watch status: {}".format(exc)
+
+# ---------------------------------------------------------------------------
+# Suggestion engine (v1.1)
+# ---------------------------------------------------------------------------
+TOOL_SCHEMAS.append({
+    "type": "function",
+    "function": {
+        "name": "get_suggestions",
+        "description": (
+            "Suggest content to watch from the library. "
+            "Use when the user asks 'what should I watch?', 'suggest something', "
+            "'what have I not seen yet?', 'recommend a movie', 'what is good to watch tonight?'. "
+            "Always explain why each suggestion was made. "
+            "If no ratings exist yet, suggest based on unwatched content and note that "
+            "ratings will improve future suggestions."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "count": {
+                    "type": "integer",
+                    "description": "Number of suggestions to return. Default 5.",
+                },
+                "content_type": {
+                    "type": "string",
+                    "description": "One of: movie, tv. Omit for both.",
+                },
+            },
+            "required": [],
+        },
+    },
+})
+
+
+def _tool_get_suggestions(count=5, content_type=None):
+    """Return content suggestions with reasoning."""
+    try:
+        from app.suggestions import get_suggestions
+        count = int(count) if count else 5
+        suggestions = get_suggestions(count=count, content_type=content_type)
+        if not suggestions:
+            return (
+                "No unwatched content found in your library. "
+                "Add some movies or shows first."
+            )
+        lines = ["Here are some suggestions for you:"]
+        for i, s in enumerate(suggestions, 1):
+            year = " ({})".format(s["year"]) if s["year"] else ""
+            ctype = "Movie" if s["content_type"] == "movie" else "TV Show"
+            rating = " -- {} stars".format(s["rating"]) if s["rating"] else ""
+            lines.append(
+                "{}. [{}] {}{}{} -- {}".format(
+                    i, ctype, s["title"], year, rating, s["reason"]
+                )
+            )
+        return "\n".join(lines)
+    except Exception as exc:
+        logger.error("[HookReel] _tool_get_suggestions error: %s", exc)
+        return "Error getting suggestions: {}".format(exc)
+
+
+# ---------------------------------------------------------------------------
+# Dedupe detection (v1.1)
+# ---------------------------------------------------------------------------
+TOOL_SCHEMAS.append({
+    "type": "function",
+    "function": {
+        "name": "find_duplicates",
+        "description": (
+            "Scan the library for duplicate movies or TV shows. "
+            "Use when the user asks 'do I have any duplicates?', "
+            "'have I downloaded X twice?'. "
+            "Never auto-deletes -- always presents findings for user confirmation. "
+            "To delete a duplicate, use delete_media after the user confirms."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "content_type": {
+                    "type": "string",
+                    "description": "One of: movie, show. Omit for both.",
+                },
+            },
+            "required": [],
+        },
+    },
+})
+
+
+def _tool_find_duplicates(content_type=None):
+    """Scan library for duplicate movies and TV shows."""
+    try:
+        import os
+        from collections import defaultdict
+
+        duplicates = []
+
+        if content_type in (None, "movie"):
+            # Check database for movies with matching titles and years
+            connection = database.get_connection()
+            cursor = connection.cursor()
+            cursor.execute("""
+                SELECT title, year, COUNT(*) as cnt, GROUP_CONCAT(id) as ids
+                FROM movies
+                GROUP BY LOWER(title), year
+                HAVING cnt > 1
+            """)
+            rows = cursor.fetchall()
+            connection.close()
+
+            for row in rows:
+                ids = [int(i) for i in row["ids"].split(",")]
+                entries = []
+                for mid in ids:
+                    movie = database.get_movie_by_id(mid)
+                    if movie:
+                        fpath = movie.get("file_path", "")
+                        size = 0
+                        if fpath and os.path.isfile(fpath):
+                            size = os.path.getsize(fpath)
+                        entries.append({
+                            "id": mid,
+                            "title": movie["title"],
+                            "year": movie.get("year", ""),
+                            "file_path": fpath,
+                            "size_bytes": size,
+                            "status": movie.get("status", ""),
+                        })
+                if len(entries) > 1:
+                    duplicates.append({
+                        "type": "movie",
+                        "title": row["title"],
+                        "year": row["year"],
+                        "entries": entries,
+                    })
+
+            # Also check Movies folder on disk for duplicate filenames
+            movies_path = config.MOVIES_PATH
+            if os.path.isdir(movies_path):
+                seen = defaultdict(list)
+                for root, dirs, files in os.walk(movies_path):
+                    for fname in files:
+                        ext = os.path.splitext(fname)[1].lower()
+                        if ext in {".mkv", ".mp4", ".avi", ".mov", ".m4v"}:
+                            fpath = os.path.join(root, fname)
+                            seen[fname.lower()].append(fpath)
+                for fname, paths in seen.items():
+                    if len(paths) > 1:
+                        entries = []
+                        for p in paths:
+                            size = os.path.getsize(p) if os.path.isfile(p) else 0
+                            entries.append({"file_path": p, "size_bytes": size})
+                        duplicates.append({
+                            "type": "movie_file",
+                            "filename": fname,
+                            "entries": entries,
+                        })
+
+        if content_type in (None, "show"):
+            connection = database.get_connection()
+            cursor = connection.cursor()
+            cursor.execute("""
+                SELECT title, year, COUNT(*) as cnt, GROUP_CONCAT(id) as ids
+                FROM shows
+                GROUP BY LOWER(title), year
+                HAVING cnt > 1
+            """)
+            rows = cursor.fetchall()
+            connection.close()
+
+            for row in rows:
+                ids = [int(i) for i in row["ids"].split(",")]
+                entries = []
+                for sid in ids:
+                    show = database.get_show(sid)
+                    if show:
+                        entries.append({
+                            "id": sid,
+                            "title": show["title"],
+                            "year": show.get("year", ""),
+                            "status": show.get("status", ""),
+                        })
+                if len(entries) > 1:
+                    duplicates.append({
+                        "type": "show",
+                        "title": row["title"],
+                        "year": row["year"],
+                        "entries": entries,
+                    })
+
+        if not duplicates:
+            return "No duplicates found in your library."
+
+        lines = ["Duplicates found -- review before deleting:\n"]
+        for group in duplicates:
+            gtype = group.get("type", "")
+            if gtype == "movie":
+                lines.append("Movie: {} ({})".format(group["title"], group["year"]))
+                for e in group["entries"]:
+                    size_mb = round(e["size_bytes"] / 1024 / 1024, 1) if e["size_bytes"] else 0
+                    lines.append("  id={} status={} size={}MB path={}".format(
+                        e["id"], e["status"], size_mb, e["file_path"] or "no file"
+                    ))
+            elif gtype == "movie_file":
+                lines.append("Duplicate file: {}".format(group["filename"]))
+                for e in group["entries"]:
+                    size_mb = round(e["size_bytes"] / 1024 / 1024, 1)
+                    lines.append("  {}MB -- {}".format(size_mb, e["file_path"]))
+            elif gtype == "show":
+                lines.append("Show: {} ({})".format(group["title"], group["year"]))
+                for e in group["entries"]:
+                    lines.append("  id={} status={}".format(e["id"], e["status"]))
+            lines.append("")
+
+        lines.append("To delete a duplicate, ask me which one to remove and confirm with DELETE_ENABLED=true.")
+        return "\n".join(lines)
+
+    except Exception as exc:
+        logger.error("[HookReel] _tool_find_duplicates error: %s", exc)
+        return "Error scanning for duplicates: {}".format(exc)

@@ -10,6 +10,8 @@ import re
 import requests
 
 from app import config, database, qbittorrent
+from app.audit import log_audit
+from app.database import log_download_event
 from app.logger import get_logger
 
 logger = get_logger(__name__)
@@ -94,14 +96,16 @@ def process_movie(movie: dict) -> bool:
     movie_id = movie["id"]
     title = movie["title"]
     year = movie.get("year", "")
-
     logger.info("[HookReel] post-process start: '%s' (id=%d)", title, movie_id)
+    torrent_hash = movie.get("torrent_hash", "")
+    torrent_name = movie.get("release_name", title)
 
     # Step 1 — Resolve file path
     file_path = _resolve_file_path(movie)
     if not file_path:
         logger.error("[HookReel] Could not resolve file path for movie id=%d", movie_id)
         database.update_movie_status(movie_id, "failed")
+        log_download_event("processing_failed", "Could not resolve file path", movie_id=movie_id, torrent_hash=torrent_hash)
         return False
 
     logger.info("[HookReel] Resolved file path: %s", file_path)
@@ -111,9 +115,11 @@ def process_movie(movie: dict) -> bool:
     if not scan_passed:
         logger.error("[HookReel] Scan failed for '%s' — post-processing halted", title)
         database.update_movie_status(movie_id, "quarantined")
+        log_download_event("clamav_failed", "Virus found, file quarantined", movie_id=movie_id, torrent_hash=torrent_hash, file_path=file_path)
         return False
 
-    # Step 3 — Rename
+    log_download_event("clamav_passed", "Scan clean", movie_id=movie_id, torrent_hash=torrent_hash, file_path=file_path)
+    # Step 3 -- Rename
     new_path = rename_file(file_path, title, year)
     if not new_path:
         logger.error("[HookReel] Rename failed for '%s'", title)
@@ -121,6 +127,7 @@ def process_movie(movie: dict) -> bool:
         return False
 
     database.update_movie_status(movie_id, "renamed")
+    log_download_event("rename_complete", f"Renamed to {new_path}", movie_id=movie_id, torrent_hash=torrent_hash, file_path=new_path)
     logger.info("[HookReel] Renamed: %s → %s", file_path, new_path)
 
     # Step 4 — Move
@@ -133,10 +140,12 @@ def process_movie(movie: dict) -> bool:
 
     database.update_movie_file_path(movie_id, final_path)
     database.update_movie_status(movie_id, "complete")
+    log_download_event("move_complete", f"Moved to {final_path}", movie_id=movie_id, torrent_hash=torrent_hash, file_path=final_path)
     logger.info("[HookReel] Moved to final location: %s", final_path)
 
     # Step 5 — Jellyfin notify (best-effort, non-blocking)
     notify_jellyfin(library_path=config.MOVIES_PATH)
+    log_download_event("jellyfin_notified", "Jellyfin library scan triggered", movie_id=movie_id, torrent_hash=torrent_hash)
 
     logger.info("[HookReel] Post-processing complete for '%s' (id=%d)", title, movie_id)
     return True

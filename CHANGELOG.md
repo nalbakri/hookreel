@@ -1,3 +1,46 @@
+## v1.1 Alf -- 2026-05-03
+### New Features
+- Download lifecycle tracking -- full audit trail from request to final file
+- Star ratings (1-5) for movies, TV shows, and individual episodes
+- Watch tracking -- mark watched/unwatched, track progress per episode
+- Jellyfin webhook integration -- automatic watch history from Jellyfin playback
+- Suggestion engine -- recommends unwatched and highly rated content
+- Dedupe detection -- scans library for duplicate movies and shows
+- Download visibility -- file size and progress % via get_download_status
+- Prowlarr URL resolution -- download URLs resolved to magnet links at add time,
+  eliminating failures caused by expiring Prowlarr proxy URLs
+- Re-fetch flow -- pipeline re-searches Prowlarr for a fresh URL when user confirms
+  a release, iterating across indexers until one resolves successfully
+### Improvements
+- Hash capture at add time -- extracts hash directly from magnet URL,
+  eliminates fuzzy post-hoc name matching that caused wrong-file assignments
+- Search results capped at 5, sorted by seeders, file size always shown
+- Agent stops and asks user after any failed download -- no auto-retry
+- FastAPI upgraded from 0.115.0 to 0.136.1
+- Starlette upgraded from 0.38.6 to 1.0.0 (resolves CVE-2024-47874, CVE-2025-54121)
+- python-multipart upgraded from 0.0.9 to 0.0.26 (resolves CVE-2024-53981, CVE-2026-24486)
+### Bug Fixes
+- Fixed tv_pipeline.py passing categories=[5000] instead of category=5000 to search_releases()
+- Fixed tv_pipeline.py fast path inverting _validate_download_url() result, blocking magnet links
+- Fixed pipeline.py fast path setting status to downloading when torrent hash is None
+- Fixed pipeline.py fast path hardcoding downloading in return dict regardless of actual status
+- Fixed pre-existing bug in tv_pipeline.py where chosen_title was passed as save_path
+- Added time.sleep(2) before hash name lookup to fix race condition on direct URL downloads
+### Agent
+- New rules for ratings, watch tracking, suggestions, dedupe, and download history
+- get_download_history tool -- agent can explain what happened to any download
+- get_stuck_downloads tool -- agent can identify stalled downloads
+- download_url removed from search results -- agent passes release_title to request_movie
+- Rule 8 updated -- agent must stop and ask user after any failed download, no auto-retry
+- Rule 9 updated -- re-fetch flow replaces stale download URL pattern
+### Documentation
+- INSTALL.md -- added Jellyfin Webhook Plugin setup instructions
+### Tests
+- 15 new tests (106-120) covering all v1.1 features
+- Total: 99 tests passing
+
+---
+
 # Changelog
 
 All notable changes to HookReel are documented here.
@@ -15,7 +58,7 @@ All notable changes to HookReel are documented here.
 
 ### Known limitation
 - Movies downloaded without a torrent hash (due to a pre-existing hash lookup reliability issue)
-  cannot be auto-recovered. Affected movies will remain as 'failed' and must be re-requested.
+  cannot be auto-recovered. Affected movies will remain as failed and must be re-requested.
   The postprocessor will log a clear warning. A proper fix with interactive file confirmation
   via Telegram is planned for v1.1 Alf.
 
